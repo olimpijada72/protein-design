@@ -30,7 +30,7 @@ process GENERATE_BACKBONES {
     python ${params.proteina_script} \
         --config_name inference_cond_autoguidance \
         --cath_codes 2.60.40.x \
-        --nsamples 3 
+        --nsamples 1 
     
     # 2. Use DOUBLE backslash for the semicolon so Nextflow doesn't swallow the arguments
     find . -name "*.pdb" -not -path "./backbones/*" -exec mv {} backbones/ \\;
