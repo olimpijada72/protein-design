@@ -24,3 +24,4 @@ multiprocess==0.70.16
 dill==0.3.8
 fsspec[http]==2024.6.1
 streamlit==1.50.0
+torchvision>=0.13.0
