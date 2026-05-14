@@ -1,0 +1,16 @@
+name: protein_design_env
+channels:
+  - nvidia
+  - pytorch
+  - conda-forge
+  - pyg
+  - bioconda
+  - nodefaults
+dependencies:
+  - conda-forge::biotite=0.41.0
+  - python=3.11
+  - pip
+  - bioconda::nextflow
+  - pip:
+    - transformers
+    - huggingface-hub

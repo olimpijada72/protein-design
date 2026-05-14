@@ -24,7 +24,7 @@ FILES = [
     ("data.zip",                            "external/proteina"),
     ("saved_models.zip",                    "external/CATHe2"),
     ("cathe-predict.zip",                   "external/CATHe2/src"),
-    ("foldseek.zip",                        "external/CATHe2/foldseek/bin"),
+    ("foldseek.zip",                        "external/CATHe2"),
 ]
 
 REPO_ROOT = Path(__file__).parent
