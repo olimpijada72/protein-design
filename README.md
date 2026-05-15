@@ -13,11 +13,16 @@ Generative protein design pipeline for immunoglobulin backbone synthesis and fol
 
 This project implements an end-to-end generative protein design pipeline focused on immunoglobulin-like folds (CATH 2.60.40.x). The system combines flow-based protein backbone generation (*proteina*), sequence design (*ProteinMPNN*), and structural fold classification (*CATHe2*) to generate and evaluate novel protein candidates computationally.
 
+For a detailed explination of the theoretical apsects of the project, consult the document at `docs/THEORY_EXPLANATION.md`, and a precise technical breakdown can be found at `docs/TECHNICAL_EXPLANATION.md`.
+
+
+
 ![Immunoglobulin_image](figures/Immunoglobulin_image.jpg)
 
 
 ## Architecture
-TODO: add diagram
+
+![architecture](figures/protein-design_architecture.png)
 
 The pipeline works as follows:
 - Proteina generates the alpha-carbon backbones
