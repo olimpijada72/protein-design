@@ -29,7 +29,6 @@ The pipeline works as follows:
 - ProteinMPNN populates the backbones with specific amino acid residues and outputs an amino acid sequence  
 - CATHe2 is used to classify and filter the amino acid sequences to verify the ones that are immunoglobulin
 
-
 ## Key Features
 
 - End-to-end automated protein generation pipeline
@@ -43,14 +42,7 @@ The pipeline works as follows:
 
 Example outputs/images
 
-## Technical Stack
 
-- **Backbone generation**: Proteina (flow-based protein structure generation)
-- **Sequence design**: ProteinMPNN
-- **Fold classification**: CATHe2
-- **Pipeline orchestration**: Nextflow
-- **Environment management**: Conda
-- **Deep learning frameworks**: PyTorch
 
 ## Installation
 For a detailed explanation on how to setup the project, consult this guide `docs/SETUP.md`. The basic commands are the following:
