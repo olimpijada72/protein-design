@@ -54,6 +54,39 @@ There are 4 different structural levels at which proteins are observed
 - Structural proteins — Actin, collagen.
 - Defense proteins — Antibodies.
 
+### CATH Classification System
+CATH (Class – Architecture – Topology – Homologous superfamily) is a hierarchical classification system that organizes protein domains based on their **3D structural features** and **evolutionary relationships.** There are 4 levels:
+1. **Class (C)**
+    - Broadest category, based on **secondary structure composition.**
+    - Example:
+        - Mainly α (helices dominate)
+        - Mainly β (sheets dominate) 
+        - α–β mixed
+2. **Architecture (A)**
+    - **Arrangement of secondary structures in 3D space**, ignoring connectivity.
+    - Example: β-barrel, α-sandwich, α–β horseshoe.
+    - Captures the *overall shape of the domain.*
+3. **Topology (T)**
+    - Also called **fold.**
+    - Includes **connectivity/order of secondary structures.**
+    - Example: TIM barrel fold (α/β-barrel).
+    - Domains with the same topology often evolved from a common ancestor.
+4. **Homologous superfamily (H)**
+    - Groups domains with **clear evidence of evolutionary relationship.**
+    -  Members share similar structures and often related functions.
+
+![CATH system](/figures/cath_system.png)
+
+
+### Immungolobulin 
+
+2.60.40 expands to:
+2 → Class: Mainly β
+60 → Architecture: β-barrel
+40 → Topology (Fold family): Immunoglobulin-like β-sandwich
+
+So, 2.60.40 = the Ig-like β-sandwich fold.
+
 ## How proteina Works?
 
 
