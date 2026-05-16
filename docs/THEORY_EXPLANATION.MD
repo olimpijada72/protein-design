@@ -1,9 +1,9 @@
 # Explanation of Theoretical Aspects 
 
-## Biology Knowledge Prerequisites
+## Protein Biology Fundamentals
 
 ### What is Protein and What is it Made of?
-Proteins are large, complex molecules made from chains of amino acids linked by peptide bonds. There are 20 standard amino acids (plus a few rare ones like selenocysteine).
+Proteins are biological macromolecules composed of amino acid chains whose three-dimensional structure determines their function. In computational protein design, proteins are typically represented either as amino acid sequences or as 3D atomic coordinates, depending on the modeling task.
 
 Each has amino acid has:
 - **Backbone**: Same structure in all amino acids (–NH₂, –COOH).
@@ -81,7 +81,6 @@ CATH (Class – Architecture – Topology – Homologous superfamily) is a hiera
 ### Immungolobulin (Ig)
 - Immunoglobulin is a protein family wiht the **immunoglobulin fold** (β-sandwich of antiparallel β-strands)
 - **Antibodies are speciliazed immunoglobulins** produced by B cells that bind antigens
-All antibodies are immunoglobulins, but some immunoglobulins function in other immune signaling pathways without directly neutralizing antigens.
 - All antibodies are immunoglobulins, but not all immunoglobulins act as antibodies. Think of immunoglobulin as the “category” (like *dog*), and antibody as a specific “job” some of those proteins have (like *guide dog*). All guide dogs are dogs, but not all dogs are guide dogs.
 
 ![immunoglobulin diagram.](/figures/immunoglobulin_diagram.png)
@@ -92,11 +91,31 @@ Immunoglobulin-like folds correspond to 2.60.40 in the CATH system:
 - 40 → Topology (Fold family): Immunoglobulin-like β-sandwich
 - So, 2.60.40 = the Ig-like β-sandwich fold.
 
-## How proteina Works?
+## Protein Representation in Machine Learning
+- sequences
+- one-hot encoding
+- embeddings
+- structural graphs
+- coordinate systems
+- Explain the different file formats used in this project (fasta, pdb, etc)
 
+## How proteina Works?
+- inverse folding
+- structure-conditioned sequence generation
+- backbone generation
+- intuition
+- diffusion vs flow matching
+- why Proteina works
 
 ## How ProteinMPNN Works?
-
+- graph representation
+- message passing
+- autoregressive decoding
 
 ## How CATHe2 Works?
+- protein language models
+- fold classification
+- embeddings
 
+## Pipeline Integration
+how all components connect
