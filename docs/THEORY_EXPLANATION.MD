@@ -78,14 +78,19 @@ CATH (Class – Architecture – Topology – Homologous superfamily) is a hiera
 ![CATH system](/figures/cath_system.png)
 
 
-### Immungolobulin 
+### Immungolobulin (Ig)
+- Immunoglobulin is a protein family wiht the **immunoglobulin fold** (β-sandwich of antiparallel β-strands)
+- **Antibodies are speciliazed immunoglobulins** produced by B cells that bind antigens
+All antibodies are immunoglobulins, but some immunoglobulins function in other immune signaling pathways without directly neutralizing antigens.
+- All antibodies are immunoglobulins, but not all immunoglobulins act as antibodies. Think of immunoglobulin as the “category” (like *dog*), and antibody as a specific “job” some of those proteins have (like *guide dog*). All guide dogs are dogs, but not all dogs are guide dogs.
 
-2.60.40 expands to:
-2 → Class: Mainly β
-60 → Architecture: β-barrel
-40 → Topology (Fold family): Immunoglobulin-like β-sandwich
+![immunoglobulin diagram.](/figures/immunoglobulin_diagram.png)
 
-So, 2.60.40 = the Ig-like β-sandwich fold.
+Immunoglobulin-like folds correspond to 2.60.40 in the CATH system:
+- 2 → Class: Mainly β
+- 60 → Architecture: β-barrel
+- 40 → Topology (Fold family): Immunoglobulin-like β-sandwich
+- So, 2.60.40 = the Ig-like β-sandwich fold.
 
 ## How proteina Works?
 
