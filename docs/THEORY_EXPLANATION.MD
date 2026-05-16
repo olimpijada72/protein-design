@@ -1,8 +1,8 @@
 # Explanation of Theoretical Aspects 
 
-## Protein Biology Fundamentals
+## 1. Protein Biology Fundamentals
 
-### What is Protein and What is it Made of?
+### 1.1. What is Protein and What is it Made of?
 Proteins are biological macromolecules composed of amino acid chains whose three-dimensional structure determines their function. In computational protein design, proteins are typically represented either as amino acid sequences or as 3D atomic coordinates, depending on the modeling task.
 
 Each has amino acid has:
@@ -21,7 +21,7 @@ The alpha (α) carbon in proteins is the central carbon atom in an amino acid, b
 ![peptide bond](/figures/peptide_bond_diagram.png)
 
 
-### Protein Structure
+### 1.2. Protein Structure
 There are 4 different structural levels at which proteins are observed
 
 ![Protein structures](/figures/protein_structures.png)
@@ -47,14 +47,14 @@ There are 4 different structural levels at which proteins are observed
     - Example: Hemoglobin — 4 subunits work together to transport oxygen.
 
 
-### Key Functional Categories
+### 1.3. Key Functional Categories
 - Enzymes — Catalyze biochemical reactions.
 - Transport proteins — Hemoglobin, ion channels.
 - Signaling proteins — Hormones, receptors.
 - Structural proteins — Actin, collagen.
 - Defense proteins — Antibodies.
 
-### CATH Classification System
+### 1.4. CATH Classification System
 CATH (Class – Architecture – Topology – Homologous superfamily) is a hierarchical classification system that organizes protein domains based on their **3D structural features** and **evolutionary relationships.** There are 4 levels:
 1. **Class (C)**
     - Broadest category, based on **secondary structure composition.**
@@ -78,7 +78,7 @@ CATH (Class – Architecture – Topology – Homologous superfamily) is a hiera
 ![CATH system](/figures/cath_system.png)
 
 
-### Immungolobulin (Ig)
+### 1.5. Immungolobulin (Ig)
 - Immunoglobulin is a protein family wiht the **immunoglobulin fold** (β-sandwich of antiparallel β-strands)
 - **Antibodies are speciliazed immunoglobulins** produced by B cells that bind antigens
 - All antibodies are immunoglobulins, but not all immunoglobulins act as antibodies. Think of immunoglobulin as the “category” (like *dog*), and antibody as a specific “job” some of those proteins have (like *guide dog*). All guide dogs are dogs, but not all dogs are guide dogs.
@@ -91,7 +91,7 @@ Immunoglobulin-like folds correspond to 2.60.40 in the CATH system:
 - 40 → Topology (Fold family): Immunoglobulin-like β-sandwich
 - So, 2.60.40 = the Ig-like β-sandwich fold.
 
-## Protein Representation in Machine Learning
+## 2. Protein Representation in Machine Learning
 - sequences
 - one-hot encoding
 - embeddings
@@ -99,7 +99,7 @@ Immunoglobulin-like folds correspond to 2.60.40 in the CATH system:
 - coordinate systems
 - Explain the different file formats used in this project (fasta, pdb, etc)
 
-## How proteina Works?
+## 3. How proteina Works?
 - inverse folding
 - structure-conditioned sequence generation
 - backbone generation
@@ -107,15 +107,15 @@ Immunoglobulin-like folds correspond to 2.60.40 in the CATH system:
 - diffusion vs flow matching
 - why Proteina works
 
-## How ProteinMPNN Works?
+## 4. How ProteinMPNN Works?
 - graph representation
 - message passing
 - autoregressive decoding
 
-## How CATHe2 Works?
+## 5. How CATHe2 Works?
 - protein language models
 - fold classification
 - embeddings
 
-## Pipeline Integration
+## 6. Pipeline Integration
 how all components connect
