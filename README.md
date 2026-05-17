@@ -1,61 +1,106 @@
-# protein-design
+# Immunoglobulin Protein Design Pipeline
+![Python](https://img.shields.io/badge/python-3.11-blue)
+![Nextflow](https://img.shields.io/badge/orchestrator-nextflow-green)
+![License](https://img.shields.io/badge/license-MIT-purple)
 
-<a target="_blank" href="https://cookiecutter-data-science.drivendata.org/">
-    <img src="https://img.shields.io/badge/CCDS-Project%20template-328F97?logo=cookiecutter" />
-</a>
 
-A Data Science project for designing proteins
+Generative protein design pipeline for immunoglobulin backbone synthesis and fold validation using flow-based models and graph neural networks.
 
-## Project Organization
+![protein_rotating](figures/proteins_rotating.gif)
+
+## Overview
+
+
+Designing novel proteins computationally remains one of the central challenges in modern bioinformatics and generative machine learning. This project implements an end-to-end protein design pipeline focused on immunoglobulin-like folds (CATH 2.60.40.x), integrating generative backbone synthesis, sequence design, and fold-level structural validation into a unified reproducible workflow.
+
+For a detailed explination of the theoretical apsects of the project, consult the document at `docs/THEORY_EXPLANATION.md`, and a precise technical breakdown can be found at `docs/TECHNICAL_EXPLANATION.md`.
+
+
+
+![Immunoglobulin_image](figures/Immunoglobulin_image.jpg)
+
+
+## Architecture
+
+![architecture](figures/protein-design_architecture.png)
+
+The pipeline works as follows:
+- **Proteina** generates plausible α-carbon backbone geometries using flow-based generative modeling.
+- **ProteinMPNN** designs amino acid sequences conditioned on the generated backbone structure.
+- **CATHe2** predicts the resulting structural fold family to filter candidates belonging to the immunoglobulin-like β-sandwich architecture.
+## Key Features
+
+- End-to-end automated protein generation pipeline
+- Flow-based backbone synthesis using Proteina
+- Sequence generation with ProteinMPNN
+- Structural fold validation using CATHe2
+- Reproducible orchestration with Nextflow
+- Modular multi-environment setup
+
+## Results
+
+Example outputs/images
+
+
+
+## Installation
+For a detailed explanation on how to setup the project, consult this guide `docs/SETUP.md`. The basic commands are the following:
 
 ```
-├── LICENSE            <- Open-source license if one is chosen
-├── Makefile           <- Makefile with convenience commands like `make data` or `make train`
-├── README.md          <- The top-level README for developers using this project.
-├── data
-│   ├── external       <- Data from third party sources.
-│   ├── interim        <- Intermediate data that has been transformed.
-│   ├── processed      <- The final, canonical data sets for modeling.
-│   └── raw            <- The original, immutable data dump.
-│
-├── docs               <- A default mkdocs project; see www.mkdocs.org for details
-│
-├── models             <- Trained and serialized models, model predictions, or model summaries
-│
-├── notebooks          <- Jupyter notebooks. Naming convention is a number (for ordering),
-│                         the creator's initials, and a short `-` delimited description, e.g.
-│                         `1.0-jqp-initial-data-exploration`.
-│
-├── pyproject.toml     <- Project configuration file with package metadata for 
-│                         protein-design and configuration for tools like black
-│
-├── references         <- Data dictionaries, manuals, and all other explanatory materials.
-│
-├── reports            <- Generated analysis as HTML, PDF, LaTeX, etc.
-│   └── figures        <- Generated graphics and figures to be used in reporting
-│
-├── requirements.txt   <- The requirements file for reproducing the analysis environment, e.g.
-│                         generated with `pip freeze > requirements.txt`
-│
-├── setup.cfg          <- Configuration file for flake8
-│
-└── protein-design   <- Source code for use in this project.
-    │
-    ├── __init__.py             <- Makes protein-design a Python module
-    │
-    ├── config.py               <- Store useful variables and configuration
-    │
-    ├── dataset.py              <- Scripts to download or generate data
-    │
-    ├── features.py             <- Code to create features for modeling
-    │
-    ├── modeling                
-    │   ├── __init__.py 
-    │   ├── predict.py          <- Code to run model inference with trained models          
-    │   └── train.py            <- Code to train models
-    │
-    └── plots.py                <- Code to create visualizations
+chmod +x setup_envs.sh
+bash setup_envs.sh
+```
+```
+conda activate protein_design_env
+```
+```
+python download_large_files.py   
 ```
 
---------
 
+## Usage
+For a detailed explanation on how to run the project, consult this guide `docs/SETUP.md`. The basic commands are the following:
+```
+cd pipeline
+nextflow run local_pipeline.nf -with-conda
+
+```
+
+## Repository Structure
+
+The repository integrates external state-of-the-art protein generation ([proteina](https://github.com/NVIDIA-Digital-Bio/proteina/)) and classification frameworks ([CATHe2](https://github.com/Mouret-Orfeu/CATHe2)) into a unified reproducible pipeline.
+```
+.
+├── download_large_files.py
+├── environment.yaml
+├── external
+│   ├── CATHe2
+│   └── proteina
+├── LICENSE
+├── pipeline
+│   ├── final_results
+│   ├── local_pipeline.nf
+│   └── work
+├── README.md
+└── setup_envs.sh
+```
+
+
+
+## My Contributions
+- Designed and implemented an end-to-end protein design pipeline
+- Integrated multiple state-of-the-art protein ML models
+- Built reproducible multi-environment infrastructure
+- Automated orchestration using Nextflow
+- Developed filtering and evaluation workflow for immunoglobulin fold candidates
+
+## Future Work
+
+- Structural validation using AlphaFold2/ESMFold
+- Energy minimization and stability estimation
+- Reinforcement learning for fold optimization
+- Interactive visualization dashboard
+- Fine-tuning backbone generators on immunoglobulin datasets
+## References
+
+Papers/repos

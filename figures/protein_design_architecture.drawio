@@ -1,0 +1,25 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36" version="29.6.1">
+  <diagram name="Page-1" id="eG0lLO6mZAvrDYVYADC1">
+    <mxGraphModel dx="1018" dy="689" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="wRsQPSNcdPQvnJjwycbk-4" edge="1" parent="1" source="wRsQPSNcdPQvnJjwycbk-1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="wRsQPSNcdPQvnJjwycbk-2" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="wRsQPSNcdPQvnJjwycbk-1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Alpha-Carbon backbone generation&lt;div&gt;with &lt;i&gt;proteina&amp;nbsp;&lt;/i&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="120" x="130" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="wRsQPSNcdPQvnJjwycbk-5" edge="1" parent="1" source="wRsQPSNcdPQvnJjwycbk-2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="wRsQPSNcdPQvnJjwycbk-3" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="wRsQPSNcdPQvnJjwycbk-2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="Sequence design with &lt;i&gt;ProteinMPNN&amp;nbsp;&lt;/i&gt;" vertex="1">
+          <mxGeometry height="60" width="120" x="305" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="wRsQPSNcdPQvnJjwycbk-3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="Fold classification with &lt;i&gt;CATHe2&lt;/i&gt;" vertex="1">
+          <mxGeometry height="60" width="120" x="490" y="90" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
