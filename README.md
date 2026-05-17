@@ -6,7 +6,7 @@
 
 Generative protein design pipeline for immunoglobulin backbone synthesis and fold validation using flow-based models and graph neural networks.
 
-![protein_rotating](figures/rotate.gif)
+![protein_rotating](figures/proteins_rotating.gif)
 
 ## Overview
 
