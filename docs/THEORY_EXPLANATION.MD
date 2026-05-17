@@ -2,7 +2,7 @@
 
 ## 1. Protein Biology Fundamentals
 
-### 1.1. What is Protein and What is it Made of?
+### 1.1. What is a Protein and What is it Made of?
 Proteins are biological macromolecules composed of amino acid chains whose three-dimensional structure determines their function. In computational protein design, proteins are typically represented either as amino acid sequences or as 3D atomic coordinates, depending on the modeling task.
 
 Each amino acid has:
@@ -13,10 +13,15 @@ The sequence of amino acids determines the protein’s shape and function.
 ![protein diagram](/figures/protein_diagram.png)
 
 
-An amino acid residue is the portion of an amino acid that remains after it has formed a peptide bond with other amino acids in a protein or peptide chain, losing a molecule of water in the process; it's the fundamental building block of proteins.
+An **amino acid residue**ma is the portion of an amino acid that remains after it has formed a peptide bond with other amino acids in a protein or peptide chain, losing a molecule of water in the process; it's the fundamental building block of proteins.
 
-The alpha (α) carbon in proteins is the central carbon atom in an amino acid, bonded to the amino group (–NH₂), carboxyl group (–COOH), a hydrogen atom, and the variable side chain (R-group) that defines the amino acid's identity, making it the crucial backbone point for protein structure, folding, and function. In the protein chain, it connects the carbonyl carbon of one residue to the nitrogen of the next, forming the polypeptide backbone. 
+The **alpha (α) carbon** is the central carbon atom of an amino acid. It is bonded to:
+- the amino group (–NH₂)
+- the carboxyl group (–COOH)
+- a hydrogen atom
+- the side chain (R-group)
 
+In proteins, the Cα atoms form the backbone trace of the structure and are commonly used in computational protein modeling.
 
 ![peptide bond](/figures/peptide_bond_diagram.png)
 
@@ -24,9 +29,8 @@ The alpha (α) carbon in proteins is the central carbon atom in an amino acid, b
 ### 1.2. Protein Structure
 There are 4 different structural levels at which proteins are observed
 
-![Protein structures](/figures/protein_structures.png)
 
-1) Primary - The Sequence
+1. Primary - The Sequence
     - Simply the **sequence of amino acids** written from the **N terminus** (amino end) to the **C terminus** (Carboxyl end)
     - Determines everything about the protein’s final shape and function. Even a single amino acid change can cause major effects (e.g., sickle cell anemia from a single substitution in hemoglobin).
 
@@ -46,8 +50,11 @@ There are 4 different structural levels at which proteins are observed
     - Allows cooperative behavior, regulation, and complex functions.
     - Example: Hemoglobin — 4 subunits work together to transport oxygen.
 
+![Protein structures](/figures/protein_structures.png)
+
 
 ### 1.3. Key Functional Categories
+Different protein structures enable different biological functions. Major functional categories include:
 - Enzymes — Catalyze biochemical reactions.
 - Transport proteins — Hemoglobin, ion channels.
 - Signaling proteins — Hormones, receptors.
@@ -137,14 +144,16 @@ Proteina outputs **backbone coordinates** only: the (x, y, z) positions of the C
 Both are generative frameworks that start from random noise and denoise toward real data.
 
 **Diffusion** adds Gaussian noise to data through many small steps and trains the model to reverse each step. The forward and reverse processes are mathematically coupled, which makes training stable but sampling slow (many function evaluations needed).
+![diffusion model](/figures/diffusion_model_diagram.png)
 
 **Flow matching** is a simpler alternative. It directly learns a vector field — a function that, at any point in time, says *"move in this direction"* — that continuously transports samples from a noise distribution to the data distribution. Training is more straightforward and sampling can be done in fewer steps.
 
+![flow_matching_diagran](/figures/flow_matching_diagram.png)
 Proteina uses **flow matching** specifically: it learns a flow from random 3D Gaussian coordinates to physically plausible protein backbone shapes.
 
 ### 3.3 CATH Conditioning
 
-Proteina is trained with **CATH fold class labels** as a conditioning signal. This allows the model to be told, at sampling time, what fold family to generate — down to Class (C), Architecture (A), or Topology (T) level of the CATH hierarchy. In this pipeline, we condition on CATH code `2.60.40.x`, which corresponds to the **Ig-like β-sandwich fold** (see section 1.5).
+Proteina is trained with **CATH fold class labels** as a conditioning signal. This allows the model to be told, at sampling time, what fold family to generate down to Class (C), Architecture (A), or Topology (T) level of the CATH hierarchy. In this pipeline, we condition on CATH code `2.60.40.x`, which corresponds to the **Ig-like β-sandwich fold** (see section 1.5).
 
 To make conditioning stronger, Proteina supports:
 - **Classifier-free guidance (CFG)**: the model is trained sometimes with and sometimes without the CATH label. At sampling time, predictions are shifted away from the unconditional direction, steering output toward the desired fold.
@@ -152,7 +161,7 @@ To make conditioning stronger, Proteina supports:
 
 ### 3.4 Architecture
 
-Proteina uses a **transformer** (`ProteinTransformerAF3`) with up to 400M parameters. It optionally includes **triangular multiplicative update layers** — borrowed from AlphaFold 3 — which model pairwise residue-residue relationships explicitly and improve geometric reasoning.
+Proteina uses a **transformer** (`ProteinTransformerAF3`) with up to 400M parameters. It optionally includes **triangular multiplicative update layers**, borrowed from AlphaFold 3, which model pairwise residue-residue relationships explicitly and improve geometric reasoning.
 
 The model also uses **self-conditioning**: during generation, the model conditions on its own previous noisy prediction at each denoising step, which has been shown empirically to improve quality.
 
@@ -161,6 +170,8 @@ The model also uses **self-conditioning**: during generation, the model conditio
 ## 4. How ProteinMPNN Works?
 
 ProteinMPNN solves **inverse folding**: given a protein backbone (the 3D structure), find amino acid sequences that are predicted to fold into it. This is the bridge between Proteina's backbone outputs and sequences that can be synthesized or evaluated.
+
+![protein mpnn diagram](/figures/proteinmpnn_diagram.png)
 
 ### 4.1 Graph Representation
 
@@ -206,7 +217,7 @@ The pLM produces a vector per residue. These are **mean-pooled** across the sequ
 
 ### 5.2 ANN Classifier
 
-On top of the pLM embeddings, CATHe2 trains a shallow **artificial neural network (ANN)** — a feedforward network with a few dense layers — to classify the protein into a CATH superfamily. The ANN is fast and accurate because the pLM embedding has already done the heavy lifting of encoding relevant protein features.
+On top of the pLM embeddings, CATHe2 trains a shallow **artificial neural network (ANN)**, a feedforward network with a few dense layers, to classify the protein into a CATH superfamily. The ANN is fast and accurate because the pLM embedding has already done the heavy lifting of encoding relevant protein features.
 
 Using `AA+3Di` input (both sequence and structural alphabet) yields ~92% accuracy; `AA` only still reaches strong performance, which is why this pipeline runs CATHe2 in AA-only mode — no structural input is needed at the classification stage.
 
@@ -228,6 +239,6 @@ Proteina generates backbone PDB files conditioned on CATH code `2.60.40.x` — t
 Each PDB backbone is passed individually to ProteinMPNN (in `--ca_only` mode). It generates 50 candidate amino acid sequences per backbone at temperature 0.3, output as FASTA files. This step runs in parallel over all backbones (Nextflow flattens the PDB list into a stream).
 
 **Step 3 — RUN_CATHE (CATHe2)**
-All FASTA files are collected and merged into one batch. CATHe2 embeds each sequence with ProstT5, classifies it, and writes a `classifications.csv`. This tells us how many of the generated-then-designed sequences are predicted to fall within the target Ig-like fold — the key quality signal for the whole pipeline.
+All FASTA files are collected and merged into one batch. CATHe2 embeds each sequence with ProstT5, classifies it, and writes a `classifications.csv`. This tells us how many of the generated-then-designed sequences are predicted to fall within the target Ig-like fold, the key quality signal for the whole pipeline.
 
 The end-to-end question the pipeline answers: *can we reliably generate novel Ig-like protein sequences from scratch?*
