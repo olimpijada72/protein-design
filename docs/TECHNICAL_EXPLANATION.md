@@ -1,7 +1,12 @@
 # Protein Design Pipeline: Technical Documentation
+TO-DO list:
+- TO-DO: make Filter & export designable sequences
+- TO-DO: actually make a nextflow config that does this
+- TO-DO make this pipeline run like this
+- TO-DO add filtering step
 
-> End-to-end guide covering Proteína, ProteinMPNN, CATHe, and Nextflow orchestration
-> for structure-conditioned protein sequence design.
+> End-to-end technical guide for backbone generation, sequence design,
+> fold validation, and Nextflow orchestration.
 
 ---
 
@@ -18,7 +23,7 @@
 
 ## 1. Proteína — Backbone Generation
 
-Proteína is the core generative model in the pipeline. It is a **flow-matching-based protein backbone generator** that maps Gaussian noise → 3D protein structures conditioned on a target fold class.
+Flow-matching backbone generator: maps Gaussian noise → CATH-conditioned 3D protein structures.
 
 ### Invocation
 
@@ -29,16 +34,28 @@ python inference_cond_sampling.py \
     --nsamples 1
 ```
 
-**What this does:**
-- Samples protein backbones conditioned on a CATH fold class
-- Uses flow-matching sampling (SDE-based) to generate Cα coordinates
-- Applies autoguidance + classifier-free guidance for structural quality
+Samples CATH-conditioned backbones via SDE-based flow matching with CFG + autoguidance.
 
-### 1.1 Argument Explanation
+### Why This Works
+
+Four complementary signals steer the model simultaneously:
+
+| Signal | Controls |
+|---|---|
+| CATH label | Macro-level fold class |
+| CFG | Semantic alignment to target fold |
+| Autoguidance | Physical realism correction |
+| Self-conditioning | Temporal consistency across timesteps |
+
+Outputs are fold-consistent **and** geometrically realistic before any sequence design occurs.
+
+---
+
+### Key Arguments
 
 #### `--cath_codes 2.60.40.x`
 
-This is the most important conditioning signal. It restricts sampling to a narrow structural manifold by specifying the full CATH hierarchy:
+**What it does:** restricts sampling to a narrow structural manifold via the CATH hierarchy.
 
 | Level | Value | Meaning |
 |---|---|---|
@@ -47,22 +64,21 @@ This is the most important conditioning signal. It restricts sampling to a narro
 | Topology | `40` | Specific structural family |
 | Homology | `x` | Wildcard (any superfamily) |
 
-**Effect:**
-- Reduces the generative search space to a specific fold family
-- Improves fold consistency, designability, and downstream ProteinMPNN success rate
+**Why it matters:** reduces the generative search space to a single fold family; improves fold consistency and downstream MPNN success.
 
 #### `--config_name inference_cond_autoguidance`
 
-Selects the sampling strategy. This config enables:
-- **Classifier-free guidance (CFG)** — aligns outputs with the target CATH label
-- **Autoguidance (AG)** — uses a checkpoint difference to correct the vector field
+**What it does:** selects the sampling strategy; enables CFG + autoguidance correction.
 
-**Effect:**
-- Removes "collapsed" or geometrically unrealistic backbones
-- Improves structural sharpness and fold adherence
+**Why it matters:** removes geometrically collapsed backbones and improves fold adherence.
 
-### 1.2 Configuration Explanation
+---
 
+### Key Config Parameters
+
+Two configs drive Proteína: `inference_base.yaml` (defaults) and `inference_cond_autoguidance.yaml` (overrides).
+
+`inference_cond_autoguidance.yaml`
 ```yaml
 defaults:
   - inference_base
@@ -73,44 +89,116 @@ ckpt_name: proteina_v1.4_D21M_400M_tri.ckpt
 autoguidance_ckpt_path: "/path/to/proteina_v1.8_D21M_400M_tri_autoguidance.ckpt"
 self_cond: True
 fold_cond: True
-cath_code_level: "T"   # Guidance level
+cath_code_level: "T"
 guidance_weight: 2.0
 sampling_caflow:
   sampling_mode: sc    # "vf" for ODE, "sc" for SDE
-  sc_scale_noise: 0.3  # noise scale, used if sampling_mode == "sc"
 ```
+
+One important thing for `inference_base.yaml`: here we define  `nres_lens : [95, 100, 105, 110, 115]`. That means that proteina willg generate backbones of those lengths.
+
+
+<details>
+<summary>Full base config — inference_base.yaml</summary>
+
+```yaml
+run_name_: "testing_IgFold_2.60.40_Sweep"
+ckpt_path: "/Users/mipopovic/Desktop/proteina/data/checkpoints"
+ckpt_name:
+
+ncpus_: 24
+seed: 5
+
+nres_lens: [95, 100, 105, 110, 115]
+nsamples_per_len: 2
+max_nsamples: 5
+
+dt: 0.0025
+self_cond: True
+
+sampling_caflow:
+  sampling_mode: sc
+  sc_scale_noise: 0.3
+  sc_scale_score: 1.0
+  gt_mode: "1/t"
+  gt_p: 1.0
+  gt_clamp_val: null
+
+schedule:
+  schedule_mode: log
+  schedule_p: 2.0
+
+fold_cond: True
+cath_code_level: "T"
+len_cath_code_path: ${oc.env:DATA_PATH}/metric_factory/features/D_FS_afdb_cath_codes.pth
+
+guidance_weight: 2.0
+autoguidance_ratio: 0.5
+autoguidance_ckpt_path: "/Users/mipopovic/Desktop/proteina/data/checkpoints/proteina_v1.8_D21M_400M_tri_autoguidance.ckpt"
+
+lora:
+  use: false
+  lora_alpha: 32.0
+  lora_dropout: 0.0
+  r: 16
+  train_bias: "none"
+
+designability_seqs_per_struct: 8
+compute_designability: True
+compute_fid: False
+```
+
+</details>
+
+<details>
+<summary>SDE/ODE sampling — math details</summary>
+
+The ODE form: `dx_t = v(x_t, t) dt`
+
+The SDE form: `dx_t = v(x_t, t) dt + g_t · s(x_t, t) dt + √(2g_t) dw_t`
+
+Both produce the same marginal distributions for any `g_t`. Key parameters:
+
+- `sampling_mode: sc` — SDE sampling (vs `vf` for ODE)
+- `sc_scale_noise` — scales the `√(2g_t)` noise term
+- `sc_scale_score` — scales the `g_t · s(x_t, t)` score term
+- `g_t = sc_g · min(5, (1-t)/t)` — from optimal transport coupling
+
+</details>
 
 #### `ckpt_name: proteina_v1.4_D21M_400M_tri.ckpt`
 
-The largest and best-performing model checkpoint:
-- Trained on 21M AFDB-filtered structures
-- ~400M parameters with triangle multiplicative updates
+**What it does:** loads the primary generation model (21M AFDB structures, ~400M parameters).
 
-**Why this checkpoint:**
-- Best long-chain performance (300–800 residues)
-- Best fold diversity across CATH space
-- Best designability scores in benchmarks
+**Why it matters:** best long-chain performance (300–800 residues), fold diversity, and designability scores across benchmarks.
 
 #### `autoguidance_ckpt_path`
 
-A weaker, early-training checkpoint (~10k steps). It acts as a learned correction term: the difference between the strong and weak model's vector fields is used to sharpen outputs, improving geometric precision and designability without retraining.
+**What it does:** loads a weaker early-training checkpoint (~10k steps) used as a geometry reference.
+
+**Why it matters:** the strong–weak vector field difference acts as a correction term during sampling — improves physical realism without retraining.
+
+| Component | Role |
+|---|---|
+| Strong checkpoint | Primary generation |
+| Weak checkpoint | Geometry correction reference |
+| Field difference | Autoguidance signal |
 
 #### `self_cond: True`
 
-Self-conditioning feeds the previous timestep's prediction back into the model as an additional input.
+**What it does:** feeds the previous timestep's prediction back into the model as an additional input.
 
-**Effect:**
-- Reduces sampling noise across timesteps
-- Improves structural coherence
-- Stabilizes generation for longer chains
+**Why it matters:** reduces timestep noise and improves sampling stability for longer chains.
 
 #### `fold_cond: True`
 
-Enables conditioning on the CATH class at the C/A/T hierarchy level. This is the primary **controllability mechanism** of Proteína — without it, sampling is unconditional.
+**What it does:** enables conditioning on the CATH class at the C/A/T hierarchy level.
+
+**Why it matters:** the primary controllability mechanism — without it, sampling is unconditional.
 
 #### `guidance_weight: 2.0`
 
-Controls classifier-free guidance (CFG) strength:
+**What it does:** controls CFG strength.
 
 | Weight | Effect |
 |---|---|
@@ -118,37 +206,17 @@ Controls classifier-free guidance (CFG) strength:
 | **2.0 (chosen)** | Balanced: fold correctness without mode collapse |
 | > 3.0 | Strict fold adherence, reduced diversity |
 
-#### `sampling_mode: sc` and `sc_scale_noise: 0.3`
+#### `sampling_mode: sc` / `sc_scale_noise: 0.3`
 
-```yaml
-sampling_caflow:
-  sampling_mode: sc    # stochastic differential equation sampling
-  sc_scale_noise: 0.3  # noise injection scale
-```
+**What it does:** uses SDE sampling with controlled noise injection.
 
-- `sc` (SDE) produces more diverse outputs than `vf` (ODE)
-- Required for realistic protein variability; ODE sampling collapses to lower-entropy outputs
-- `sc_scale_noise: 0.3` maintains stable noise injection; avoids both mode collapse and structural noise
-
-### 1.3 Why This Setup Works
-
-This configuration implements **hierarchical conditional flow matching with dual guidance**. The model is steered by four complementary signals simultaneously:
-
-| Signal | Controls |
-|---|---|
-| CATH label | Macro-level fold class |
-| CFG | Semantic alignment to target fold |
-| Autoguidance | Physical realism correction |
-| Self-conditioning | Temporal consistency across timesteps |
-
-Together, these ensure that generated backbones are both fold-consistent and geometrically realistic before any sequence design occurs.
+**Why it matters:** SDE (`sc`) produces more diverse outputs than ODE (`vf`); noise scale 0.3 avoids both mode collapse and structural instability.
 
 ---
 
 ## 2. ProteinMPNN — Sequence Design
 
-ProteinMPNN designs amino acid sequences given a **fixed backbone structure**.
-It solves the inverse folding problem: given a 3D shape, find sequences that fold into it.
+Solves inverse folding: given a fixed backbone, design amino acid sequences that fold into it.
 
 ### Invocation
 
@@ -165,51 +233,41 @@ python ${params.mpnn_script} \
 
 #### `--ca_only`
 
-Use only Cα coordinates instead of full-atom structure.
+**What it does:** uses only Cα coordinates instead of full-atom structure.
 
-**Why:**
-- Proteína generates backbone-only structures (no sidechains)
-- Simplifies downstream conditioning
-- Improves robustness for noisy or flow-generated backbones
+**Why it matters:** Proteína generates backbone-only outputs (no sidechains); Cα-only improves robustness for flow-generated backbones.
 
 #### `--num_seq_per_target 50`
 
-Generate 50 candidate sequences per backbone.
+**What it does:** generates 50 candidate sequences per backbone.
 
-**Why:**
-- Sequence→structure mapping is many-to-one; multiple valid sequences can fold into the same shape
-- Increases probability of recovering at least one sequence that is thermodynamically stable, foldable, and CATHe-consistent
+**Why it matters:** sequence→structure mapping is many-to-one; 50 sequences increases the probability of recovering at least one that is thermodynamically stable and CATHe-consistent.
 
 #### `--sampling_temp 0.3`
 
-Controls sequence diversity during sampling.
+**What it does:** controls sequence diversity during sampling.
 
 | Temperature | Effect |
 |---|---|
-| Low (0.1–0.3) | Conservative, high-confidence sequences |
-| High (0.5–1.0) | Diverse but less reliable |
+| 0.1–0.3 | Conservative, high-confidence sequences |
 | **0.3 (chosen)** | Prioritizes fold stability; reduces unfolded outputs |
+| 0.5–1.0 | Diverse but less reliable |
 
 ### Role in the Pipeline
-
-ProteinMPNN sits at the center of the **backbone → sequence → fold validation** loop:
 
 ```
 Backbone (Proteína)
        ↓
   ProteinMPNN          ← inverse folding
        ↓
-  ESMFold              ← structure prediction
-       ↓
-  CATHe                ← fold classification & filtering
+     CATHe             ← fold classification & filtering
 ```
 
 ---
 
 ## 3. CATHe — Fold Validation
 
-CATHe classifies designed sequences into the CATH structural hierarchy,
-providing fold-level validation independent of ESMFold.
+Classifies designed sequences into the CATH structural hierarchy — fold-level validation independent of ESMFold.
 
 ### Invocation
 
@@ -221,9 +279,7 @@ python src/cathe-predict/cathe_predictions.py \
     --out_csv outputs/metrics/cathe_labels.csv
 ```
 
-### Purpose
-
-CATHe assigns each sequence a **CATH structural classification**:
+### CATH Hierarchy
 
 ```
 C → Class       (alpha, beta, alpha/beta, ...)
@@ -234,15 +290,13 @@ H → Homologous superfamily
 
 ### Why ProstT5?
 
-- Strong protein language model trained on evolutionary sequence data
-- Captures both evolutionary signal and structural context
-- Outperforms ESM-based classifiers on fold classification benchmarks
+Protein language model trained on evolutionary sequence data; captures both evolutionary signal and structural context. Outperforms ESM-based classifiers on fold classification benchmarks.
 
 ### Role in the Pipeline
 
 | Use | Description |
 |---|---|
-| Fold consistency check | Verify predicted fold matches the intended CATH class |
+| Fold consistency | Verify predicted fold matches intended CATH class |
 | Sequence filtering | Discard sequences assigned to the wrong fold family |
 | Comparative analysis | Compare predicted vs. target CATH label across all outputs |
 
@@ -250,47 +304,30 @@ H → Homologous superfamily
 
 ## 4. Nextflow Pipeline
 
-Nextflow orchestrates the full design-validate-filter loop as a
-**directed acyclic graph (DAG)** of processes.
+Orchestrates the full design-validate-filter loop as a **directed acyclic graph (DAG)** of processes.
 
 ### Pipeline Structure
+TO-DO: make Filter & export designable sequences
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                   PIPELINE OVERVIEW                      │
-├─────────────────────────────────────────────────────────┤
-│                                                          │
-│   Proteína (backbone generation, CATH-conditioned)       │
-│          │                                               │
-│          ▼                                               │
-│   ProteinMPNN (inverse folding, N=50 sequences)          │
-│          │                                               │
-│          ▼                                               │
-│   ESMFold (structure prediction)                         │
-│          │                                               │
-│          ▼                                               │
-│   CATHe (fold classification & filtering)                │
-│          │                                               │
-│          ▼                                               │
-│   Filter & export designable sequences                   │
-│                                                          │
-└─────────────────────────────────────────────────────────┘
+Proteína     →  CATH-conditioned backbone generation (for lengths defined in nres_lens)
+     ↓
+ProteinMPNN  →  inverse folding (50 sequences/backbone)
+     ↓
+CATHe        →  fold classification & filtering
+     ↓
+Filter & export designable sequences
 ```
 
 ### Why Nextflow?
 
-#### 1. Reproducibility
+| Property | What it provides |
+|---|---|
+| **Reproducibility** | Same DAG every run; no manual step ordering; no missed intermediates |
+| **Parallelization** | Backbone sampling, MPNN design, ESMFold, and CATHe run concurrently |
+| **Fault tolerance** | Per-sample failures are logged; remaining samples continue unaffected |
 
-Every run executes the **same DAG** with the same process graph.
-No manual step ordering. No missed intermediate files.
-
-#### 2. Parallelization
-
-Multiple backbones are processed simultaneously across:
-- Backbone sampling
-- MPNN sequence design
-- Structure prediction (ESMFold)
-- Fold classification (CATHe)
+Example process definition:
 
 ```nextflow
 process MPNN_DESIGN {
@@ -310,34 +347,23 @@ process MPNN_DESIGN {
     """
 }
 ```
-
-#### 3. Fault Tolerance
-
-If one sample fails (e.g., ESMFold OOM on a long sequence), the pipeline:
-- Logs the failure
-- Continues processing all remaining samples
-- Reports failed samples in the final run summary
-
+TO-DO: actually make a nextflow config that does this
 ### `nextflow.config` — Key Parameters
 
 ```groovy
 params {
-    // Backbone generation
     num_backbones     = 100
     length_min        = 95
     length_max        = 115
 
-    // ProteinMPNN
     num_seqs          = 50
     sampling_temp     = "0.3"
     ca_only           = true
 
-    // Guidance weights
     cfg_weight        = 2.0
     ag_weight         = 1.5
     noise_scale       = 0.3
 
-    // Filtering
     cathe_match       = true
 }
 ```
@@ -346,49 +372,39 @@ params {
 
 > **"Generate many → filter aggressively → keep only designable proteins"**
 
-This is necessary because:
-- Flow matching models produce many geometrically marginal samples
-- Biological validity is sparse in the raw output distribution
-- CATHe filtering removes fold-inconsistent sequences before downstream use
+Flow matching produces many geometrically marginal samples. Biological validity is sparse in the raw output distribution. CATHe filtering removes fold-inconsistent sequences before downstream use.
 
 ---
 
 ## 5. Core Design Tactics
 
-### 5.1 Hierarchical CATH Conditioning
+### Hierarchical CATH Conditioning
 
-Generation is **not blind**. Each backbone is conditioned on a target CATH label at the Topology (T) level:
+Each backbone is conditioned on a target CATH label at the Topology (T) level:
 
 ```
 Class (C) → Architecture (A) → Topology (T)
 ```
 
-**Effect:**
-- Reduces the generative search space to a single fold family
-- Improves structural coherence of generated backbones
-- Enables targeted fold design (e.g., "generate a β-sandwich")
+Reduces the generative search space to a single fold family; enables targeted fold design (e.g., "generate a β-sandwich").
 
-### 5.2 Dual Guidance System
-
-Two complementary forces guide backbone generation:
+### Dual Guidance System
 
 | Guidance | Mechanism | Effect |
 |---|---|---|
-| **CFG** (Classifier-Free Guidance) | Amplifies CATH-conditioned signal | Enforces fold adherence |
-| **Autoguidance (AG)** | Vector field correction via strong–weak checkpoint contrast | Enforces physical geometry |
+| **CFG** | Amplifies CATH-conditioned signal | Enforces fold adherence |
+| **Autoguidance** | Vector field correction via strong–weak checkpoint contrast | Enforces physical geometry |
 
-**Combined effect:** outputs are both structurally coherent *and* physically plausible — the two failure modes (wrong fold, bad geometry) are addressed independently.
+The two failure modes — wrong fold and bad geometry — are addressed independently.
 
-### 5.3 Model Hierarchy for Autoguidance
+### Model Hierarchy for Autoguidance
 
 | Model | Checkpoint | Role |
 |---|---|---|
-| **Strong** | `proteina_v1.4_D21M_400M_tri.ckpt` (21M dataset) | Primary generation |
-| **Weak** | Early checkpoint (~10k steps) | Autoguidance reference |
+| **Strong** | `proteina_v1.4_D21M_400M_tri.ckpt` | Primary generation |
+| **Weak** | Early checkpoint (~10k steps) | Geometry correction reference |
 
-The strong–weak vector field difference acts as a correction term during sampling, improving geometry quality without requiring additional training data or fine-tuning.
-
-### 5.4 Parameter Reference Table
+### Parameter Reference
 
 | Parameter | Value | Rationale |
 |---|---|---|
@@ -399,12 +415,13 @@ The strong–weak vector field difference acts as a correction term during sampl
 | Sampling mode | `sc` (SDE) | Better diversity than ODE (`vf`) |
 | MPNN temp | `0.3` | Prioritizes sequence stability |
 | Sequences/backbone | `50` | Sufficient coverage of sequence space |
-| CATH guidance level | `T` (Topology) | Specific enough for fold control; general enough for diversity |
+| CATH guidance level | `T` | Specific enough for fold control; general enough for diversity |
 
 ---
 
 ## 6. Reproducible Commands
 
+TO-DO make this pipeline run like this
 ### Full Pipeline Run
 
 ```bash
@@ -419,7 +436,7 @@ nextflow run main.nf \
     -resume
 ```
 
-> `-resume` restores cached process outputs — use it to avoid re-running completed steps after a partial failure.
+> `-resume` restores cached process outputs — skips completed steps after a partial failure.
 
 ---
 
@@ -429,15 +446,6 @@ nextflow run main.nf \
 python inference_cond_sampling.py \
     --config_name inference_cond_autoguidance \
     --cath_codes 2.60.40.x \
-    --nsamples 100
-```
-
-For a different fold class (e.g., TIM barrel `3.20.20`):
-
-```bash
-python inference_cond_sampling.py \
-    --config_name inference_cond_autoguidance \
-    --cath_codes 3.20.20.x \
     --nsamples 100
 ```
 
@@ -467,18 +475,7 @@ done
 
 ---
 
-### Step 3 — Structure Prediction (ESMFold)
-
-```bash
-python src/esmfold_predict.py \
-    --fasta outputs/sequences/seqs.fa \
-    --out_dir outputs/esmfold/ \
-    --chunk_size 128
-```
-
----
-
-### Step 4 — Fold Classification (CATHe)
+### Step 3 — Fold Classification (CATHe)
 
 ```bash
 python src/cathe-predict/cathe_predictions.py \
@@ -490,7 +487,9 @@ python src/cathe-predict/cathe_predictions.py \
 
 ---
 
-### Step 5 — Filter by Fold Match
+
+TO-DO add filtering step
+### Step 4 — Filter by Fold Match
 
 ```bash
 python src/filter_designable.py \
@@ -505,15 +504,14 @@ python src/filter_designable.py \
 
 ```
 Proteína     →  CATH-conditioned backbone generation (CFG + AG + self-cond)
-    ↓
-ProteinMPNN  →  50 candidate sequences per backbone (T=0.3, Cα-only)
-    ↓
-ESMFold      →  Structure prediction for each sequence
-    ↓
-CATHe        →  Fold classification; keep sequences matching target CATH class
-    ↓
+     ↓
+ProteinMPNN  →  50 sequences per backbone (T=0.3, Cα-only)
+     ↓
+ESMFold      →  structure prediction
+     ↓
+CATHe        →  fold classification; keep sequences matching target CATH
+     ↓
              Designable proteins ✓
 ```
 
-The pipeline is conservative by design: high throughput at generation,
-aggressive fold-based filtering at validation, small but reliable final output.
+High throughput at generation, aggressive fold-based filtering at validation, small but reliable final output.
