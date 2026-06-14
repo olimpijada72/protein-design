@@ -5,6 +5,7 @@ nextflow.enable.dsl=2
 params.project_root = "${workflow.projectDir.parent}"
 
 // Environment Paths
+params.protein_design_env = "/opt/miniconda3/envs/protein_design_env"
 params.proteina_env = "/opt/miniconda3/envs/proteina_env" 
 params.cathe_venv   = "${params.project_root}/external/CATHe2/venv_2"
 
@@ -60,7 +61,6 @@ process RUN_MPNN {
     """
 }
 process RUN_CATHE {
-    cache false
     publishDir "final_results", mode: 'copy'
     // Ensure we are using the venv for the python execution
     beforeScript "source ${params.cathe_venv}/bin/activate"
@@ -103,6 +103,23 @@ process RUN_CATHE {
     """
 }
 
+process GENERATE_REPORT {
+    conda "${params.protein_design_env}"
+    publishDir "final_results", mode: 'copy'
+
+    input:
+    path csv_file
+
+    output:
+    path "report.html", emit: html
+    path "top_designs.csv", emit: csv
+
+    script:
+    """
+    python ${params.project_root}/src/generate_report.py --input ${csv_file}
+    """
+}
+
 // --- 3. WORKFLOW ---
 
 workflow {
@@ -115,5 +132,7 @@ workflow {
     fastas_ch = RUN_MPNN(pdb_ch)
 
     // Collect all FASTAs into one list so CATHe runs ONCE on the whole batch
-    RUN_CATHE(fastas_ch.fastas.collect())
+    cathe_results_ch = RUN_CATHE(fastas_ch.fastas.collect())
+
+    GENERATE_REPORT(cathe_results_ch)
 }
