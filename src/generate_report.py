@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import Levenshtein
 import re
+import numpy as np
 import argparse
 import base64
 from io import BytesIO
@@ -66,7 +67,7 @@ def generate_report(csv_path):
     plt.close()
 
     # Generate HTML
-    cols_to_show = ["Sequence", "CATHe_Prediction_Probability", "seq_len", "temperature", "global_score", "seq_recovery"]
+    cols_to_show = ["Sequence", "CATHe_Prediction_Probability", "CATHe_Predicted_SFAM", "seq_len", "temperature", "global_score", "seq_recovery"]
     df_26040 = df_26040[cols_to_show].sort_values("CATHe_Prediction_Probability", ascending=False)
     final_table = df_26040.to_html(index=False)
 
