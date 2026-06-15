@@ -16,6 +16,14 @@ def generate_report(csv_path):
     # Filter for the 2.60.40 superfamily
     df_26040 = df[df["CATHe_Predicted_SFAM"].str.contains("2.60.40")].copy()
 
+    if df_26040.empty:
+        print(f"Warning: No sequences found matching '2.60.40' in {csv_path}. Creating empty report.")
+        # Create a blank report or exit
+        with open("report.html", "w") as f:
+            f.write("<html><body><h1>No designs found for 2.60.40 superfamily.</h1></body></html>")
+        pd.DataFrame().to_csv("top_designs.csv", index=False)
+        return
+
     # Sequence length
     df_26040["seq_len"] = df_26040["Sequence"].str.len()
 
@@ -51,20 +59,24 @@ def generate_report(csv_path):
     sequences = df_26040['Sequence'].tolist() # Fixed: Was 'sequence', now 'Sequence'
     subset = sequences[:50] 
     n = len(subset)
-    dist_matrix = np.zeros((n, n))
-    for i in range(n):
-        for j in range(i + 1, n):
-            dist = Levenshtein.distance(subset[i], subset[j]) / max(len(subset[i]), len(subset[j]))
-            dist_matrix[i, j] = dist_matrix[j, i] = dist
 
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(dist_matrix, cmap="viridis")
-    plt.title('Sequence Diversity (Normalized Edit Distance)')
-    
-    tmpfile = BytesIO()
-    plt.savefig(tmpfile, format='png')
-    encoded = base64.b64encode(tmpfile.getvalue()).decode('utf-8')
-    plt.close()
+    if n > 1:
+        dist_matrix = np.zeros((n, n))
+        for i in range(n):
+            for j in range(i + 1, n):
+                dist = Levenshtein.distance(subset[i], subset[j]) / max(len(subset[i]), len(subset[j]))
+                dist_matrix[i, j] = dist_matrix[j, i] = dist
+
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(dist_matrix, cmap="viridis")
+        plt.title('Sequence Diversity (Normalized Edit Distance)')
+        
+        tmpfile = BytesIO()
+        plt.savefig(tmpfile, format='png')
+        encoded = base64.b64encode(tmpfile.getvalue()).decode('utf-8')
+        plt.close()
+    else:
+        encoded = "" # Handle case with only 1 sequence
 
     # Generate HTML
     cols_to_show = ["Sequence", "CATHe_Prediction_Probability", "CATHe_Predicted_SFAM", "seq_len", "temperature", "global_score", "seq_recovery"]
