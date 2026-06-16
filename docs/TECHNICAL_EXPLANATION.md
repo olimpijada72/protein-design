@@ -1,9 +1,9 @@
 # Protein Design Pipeline: Technical Documentation
 TO-DO list:
-- TO-DO: make Filter & export designable sequences
-- TO-DO: actually make a nextflow config that does this
-- TO-DO make this pipeline run like this
-- TO-DO add filtering step
+- add experiment tracking tool (MLFlow)
+- Run experiments
+- Run final pipeline 
+- Update documentation
 
 > End-to-end technical guide for backbone generation, sequence design,
 > fold validation, and Nextflow orchestration.

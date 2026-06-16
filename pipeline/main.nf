@@ -1,19 +1,3 @@
-nextflow.enable.dsl=2
-
-// --- 1. GLOBAL PARAMETERS ---
-// Uses the parent of the directory where this script sits
-params.project_root = "${workflow.projectDir.parent}"
-
-// Environment Paths
-params.protein_design_env = "/opt/miniconda3/envs/protein_design_env"
-params.proteina_env = "/opt/miniconda3/envs/proteina_env" 
-params.cathe_venv   = "${params.project_root}/external/CATHe2/venv_2"
-
-// Script Paths
-params.proteina_script = "${params.project_root}/external/proteina/script_utils/inference_cond_sampling.py"
-params.mpnn_script     = "${params.project_root}/external/proteina/ProteinMPNN/protein_mpnn_run.py"
-params.cathe_script    = "${params.project_root}/external/CATHe2/src/cathe-predict/cathe_predictions.py"
-
 
 // --- 2. PROCESSES ---
 
@@ -31,7 +15,15 @@ process GENERATE_BACKBONES {
     python ${params.proteina_script} \
         --config_name inference_cond_autoguidance \
         --cath_codes 2.60.40.x \
-        --nsamples 1 
+        --nsamples ${params.proteina.nsamples} \
+        seed=${params.proteina.seed} \
+        dt=${params.proteina.dt} \
+        guidance_weight=${params.proteina.guidance_weight} \
+        autoguidance_ratio=${params.proteina.autoguidance_ratio} \
+        sampling_caflow.sampling_mode=${params.proteina.sampling_mode} \
+        sampling_caflow.sc_scale_noise=${params.proteina.caflow_noise_scale} \
+        nres_lens=[${params.proteina.nres_lens.join(',')}]
+
     
     # 2. Use DOUBLE backslash for the semicolon so Nextflow doesn't swallow the arguments
     find . -name "*.pdb" -not -path "./backbones/*" -exec mv {} backbones/ \\;
@@ -56,43 +48,40 @@ process RUN_MPNN {
         --ca_only \
         --pdb_path "${pdb}" \
         --out_folder ./ \
-        --num_seq_per_target 50 \
-        --sampling_temp "0.3"
+        --num_seq_per_target ${params.mpnn.num_seq_per_target} \
+        --sampling_temp "${params.mpnn.sampling_temp}"
     """
 }
+
 process RUN_CATHE {
     publishDir "final_results", mode: 'copy'
-    // Ensure we are using the venv for the python execution
     beforeScript "source ${params.cathe_venv}/bin/activate"
 
     input:
-    path fastas, stageAs: 'collected_fastas/*.fa'
+    path fastas // No need for stageAs here if we handle them directly
 
     output:
     path "classifications.csv"
 
     script:
     """
-    # 1. Merge all input fastas into one file in the CURRENT work dir
-    cat collected_fastas/*.fa > merged.fasta
+    # Merge all provided fasta files directly
+    cat *.fa > merged.fasta
     
-    # 2. Get the full path of our new merged file
     MERGED_PATH=\$(readlink -f merged.fasta)
     OUT_DIR=\$(pwd)
     CATHE_ROOT="${params.project_root}/external/CATHe2"
 
-    # 3. Move into the CATHe directory and overwrite the target file
+    # Move into the CATHe directory
     cd "\$CATHE_ROOT"
     
-    # Use -f (force) to overwrite and -p to preserve if needed
+    # Overwrite the target file
     cp -f "\$MERGED_PATH" src/cathe-predict/sequences.fasta
 
-    echo "Verified: sequences.fasta is now updated from \$MERGED_PATH"
-
-    # 4. Run the prediction
+    # Run the prediction
     python src/cathe-predict/cathe_predictions.py --model ProstT5 --input_type AA
 
-    # 5. Find the result and bring it back to the Nextflow work dir
+    # Check for results
     CSV=\$(find . -maxdepth 4 -type f -name "Results.csv" | head -n 1)
     if [ -z "\$CSV" ]; then
         echo "ERROR: Results.csv not found."

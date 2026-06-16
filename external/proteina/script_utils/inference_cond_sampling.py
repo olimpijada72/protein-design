@@ -247,6 +247,11 @@ if __name__ == "__main__":
             "1.x.x.x", "2.x.x.x", "3.x.x.x",
         ], help="List of cath codes.")
     parser.add_argument("--nsamples", type=int, default=5, help="Number of samples for each cath code.")
+    parser.add_argument(
+        "hydra_overrides",
+        nargs="*",
+        help="Hydra override arguments"
+    )
     args = parser.parse_args()
     logger.info(" ".join(sys.argv))
 
@@ -257,7 +262,10 @@ if __name__ == "__main__":
     config_path = "../configs/experiment_config"
     config_name = args.config_name
     with hydra.initialize(config_path, version_base=hydra.__version__):
-        cfg = hydra.compose(config_name=config_name)
+        cfg = hydra.compose(
+            config_name=config_name,
+            overrides=args.hydra_overrides
+        )
         logger.info(f"Inference config {cfg}")
         run_name = cfg.run_name_
 
