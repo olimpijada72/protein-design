@@ -15,7 +15,15 @@ process GENERATE_BACKBONES {
     python ${params.proteina_script} \
         --config_name inference_cond_autoguidance \
         --cath_codes 2.60.40.x \
-        --nsamples 1 
+        --nsamples ${params.proteina.nsamples} \
+        seed=${params.proteina.seed} \
+        dt=${params.proteina.dt} \
+        guidance_weight=${params.proteina.guidance_weight} \
+        autoguidance_ratio=${params.proteina.autoguidance_ratio} \
+        sampling_caflow.sampling_mode=${params.proteina.sampling_mode} \
+        sampling_caflow.sc_scale_noise=${params.proteina.caflow_noise_scale} \
+        nres_lens=[${params.proteina.nres_lens.join(',')}]
+
     
     # 2. Use DOUBLE backslash for the semicolon so Nextflow doesn't swallow the arguments
     find . -name "*.pdb" -not -path "./backbones/*" -exec mv {} backbones/ \\;
@@ -40,8 +48,8 @@ process RUN_MPNN {
         --ca_only \
         --pdb_path "${pdb}" \
         --out_folder ./ \
-        --num_seq_per_target 50 \
-        --sampling_temp "0.3"
+        --num_seq_per_target ${params.mpnn.num_seq_per_target} \
+        --sampling_temp "${params.mpnn.sampling_temp}"
     """
 }
 
