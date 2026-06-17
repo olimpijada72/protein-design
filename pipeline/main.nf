@@ -1,5 +1,5 @@
 
-// --- 2. PROCESSES ---
+// --- 1. PROCESSES ---
 
 process GENERATE_BACKBONES {
     conda "${params.proteina_env}"
@@ -54,7 +54,6 @@ process RUN_MPNN {
 }
 
 process RUN_CATHE {
-    publishDir "final_results", mode: 'copy'
     beforeScript "source ${params.cathe_venv}/bin/activate"
 
     input:
@@ -94,7 +93,6 @@ process RUN_CATHE {
 
 process GENERATE_REPORT {
     conda "${params.protein_design_env}"
-    publishDir "final_results", mode: 'copy'
 
     input:
     path csv_file
@@ -109,19 +107,55 @@ process GENERATE_REPORT {
     """
 }
 
-// --- 3. WORKFLOW ---
+process LOG_RUN {
+    conda "${params.protein_design_env}"
+
+    input:
+    path classifications_csv
+    path report_html
+    path top_designs_csv
+
+    output:
+    path "metrics.json"
+
+    script:
+    """
+    python3 << 'EOF'
+import json
+params = {
+    "proteina": {
+        "nsamples": ${params.proteina.nsamples},
+        "seed": ${params.proteina.seed},
+        "nres_lens": "${params.proteina.nres_lens.join(',')}",
+        "autoguidance_ratio": ${params.proteina.autoguidance_ratio},
+        "dt": ${params.proteina.dt},
+        "guidance_weight": ${params.proteina.guidance_weight},
+        "sampling_mode": "${params.proteina.sampling_mode}",
+        "caflow_noise_scale": ${params.proteina.caflow_noise_scale}
+    },
+    "mpnn": {
+        "num_seq_per_target": ${params.mpnn.num_seq_per_target},
+        "sampling_temp": ${params.mpnn.sampling_temp}
+    },
+    "results_dir": "${params.results_dir}"
+}
+with open("run_params.json", "w") as f:
+    json.dump(params, f)
+EOF
+
+    python ${params.project_root}/src/log_run.py ${classifications_csv} run_params.json ${report_html} ${top_designs_csv}
+    python ${params.project_root}/src/compute_metrics.py ${classifications_csv} > metrics.json
+    """
+}
+
+// --- 2. WORKFLOW ---
 
 workflow {
     backbones_ch = GENERATE_BACKBONES()
-    
-    // Flatten turns the list of PDBs into a stream of individual files
     pdb_ch = backbones_ch.pdbs.flatten()
-
-    // Pass the channel itself, not .pdbs
     fastas_ch = RUN_MPNN(pdb_ch)
-
-    // Collect all FASTAs into one list so CATHe runs ONCE on the whole batch
     cathe_results_ch = RUN_CATHE(fastas_ch.fastas.collect())
 
-    GENERATE_REPORT(cathe_results_ch)
+    report_ch = GENERATE_REPORT(cathe_results_ch)
+    LOG_RUN(cathe_results_ch, report_ch.html, report_ch.csv)
 }

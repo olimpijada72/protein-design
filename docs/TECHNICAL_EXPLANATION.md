@@ -1,6 +1,5 @@
 # Protein Design Pipeline: Technical Documentation
 TO-DO list:
-- add experiment tracking tool (MLFlow)
 - Run experiments
 - Run final pipeline 
 - Update documentation

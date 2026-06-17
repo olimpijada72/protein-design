@@ -116,9 +116,6 @@ def generate_report(csv_path):
 
     df_26040.to_csv("top_designs.csv", index=False)
 
-    abs_path = os.path.abspath("report.html")
-    webbrowser.open(f'file://{abs_path}')
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True)
