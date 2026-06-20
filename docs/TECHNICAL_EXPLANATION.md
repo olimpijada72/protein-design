@@ -1,8 +1,10 @@
 # Protein Design Pipeline: Technical Documentation
 TO-DO list:
-- Run experiments
-- Run final pipeline 
-- Update documentation
+- Update documentation 
+    - bayesian optimization
+    - ESMFold
+    - FoldSeek
+    - all the other little stuff
 
 > End-to-end technical guide for backbone generation, sequence design,
 > fold validation, and Nextflow orchestration.
@@ -514,3 +516,46 @@ CATHe        →  fold classification; keep sequences matching target CATH
 ```
 
 High throughput at generation, aggressive fold-based filtering at validation, small but reliable final output.
+
+
+
+
+
+## How to setup and run FoldSeek
+```
+conda create -n foldseek_env
+conda activate foldseek_env
+```
+
+```
+# Linux AVX2 build (check using: cat /proc/cpuinfo | grep avx2)
+wget https://mmseqs.com/foldseek/foldseek-linux-avx2.tar.gz; tar xvzf foldseek-linux-avx2.tar.gz; export PATH=$(pwd)/foldseek/bin/:$PATH
+
+# Linux ARM64 build
+wget https://mmseqs.com/foldseek/foldseek-linux-arm64.tar.gz; tar xvzf foldseek-linux-arm64.tar.gz; export PATH=$(pwd)/foldseek/bin/:$PATH
+
+# Linux AVX2 & GPU build (req. glibc >= 2.17 and nvidia driver >=525.60.13)
+wget https://mmseqs.com/foldseek/foldseek-linux-gpu.tar.gz; tar xvfz foldseek-linux-gpu.tar.gz; export PATH=$(pwd)/foldseek/bin/:$PATH
+
+# MacOS
+wget https://mmseqs.com/foldseek/foldseek-osx-universal.tar.gz; tar xvzf foldseek-osx-universal.tar.gz; export PATH=$(pwd)/foldseek/bin/:$PATH
+
+# Conda installer (Linux and macOS)
+conda install -c conda-forge -c bioconda foldseek
+```
+
+```
+foldseek databases CATH50 cath_db tmp
+```
+
+
+```
+# 1. Create a database from your PDB files
+foldseek createdb esmfold_best_designs query_db
+
+# 2. Now search the database
+foldseek search query_db cath_db results tmp
+
+# 3. Convert results to readable format
+foldseek convertalis query_db cath_db results foldseek_results.txt --format-mode 0
+```
