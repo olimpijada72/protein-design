@@ -8,6 +8,7 @@ process GENERATE_BACKBONES {
     path "backbones/*.pdb", emit: pdbs
 
     script:
+    def nres_lens_arg = (params.proteina.nres_lens instanceof List) ? params.proteina.nres_lens.join(',') : params.proteina.nres_lens
     """
     mkdir -p backbones
 
@@ -22,7 +23,7 @@ process GENERATE_BACKBONES {
         autoguidance_ratio=${params.proteina.autoguidance_ratio} \
         sampling_caflow.sampling_mode=${params.proteina.sampling_mode} \
         sampling_caflow.sc_scale_noise=${params.proteina.caflow_noise_scale} \
-        nres_lens=[${params.proteina.nres_lens.join(',')}]
+        nres_lens=[${nres_lens_arg}]
 
     
     # 2. Use DOUBLE backslash for the semicolon so Nextflow doesn't swallow the arguments
@@ -49,7 +50,8 @@ process RUN_MPNN {
         --pdb_path "${pdb}" \
         --out_folder ./ \
         --num_seq_per_target ${params.mpnn.num_seq_per_target} \
-        --sampling_temp "${params.mpnn.sampling_temp}"
+        --sampling_temp "${params.mpnn.sampling_temp}" \
+        --seed ${params.mpnn.seed}
     """
 }
 
@@ -119,6 +121,7 @@ process LOG_RUN {
     path "metrics.json"
 
     script:
+    def nres_lens_log = (params.proteina.nres_lens instanceof List) ? params.proteina.nres_lens.join(',') : params.proteina.nres_lens
     """
     python3 << 'EOF'
 import json
@@ -126,7 +129,7 @@ params = {
     "proteina": {
         "nsamples": ${params.proteina.nsamples},
         "seed": ${params.proteina.seed},
-        "nres_lens": "${params.proteina.nres_lens.join(',')}",
+        "nres_lens": "${nres_lens_log}",
         "autoguidance_ratio": ${params.proteina.autoguidance_ratio},
         "dt": ${params.proteina.dt},
         "guidance_weight": ${params.proteina.guidance_weight},
