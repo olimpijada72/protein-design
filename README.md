@@ -24,7 +24,7 @@ For a detailed explanation of the theoretical aspects of the project, consult th
 The pipeline follows this workflow:
 
 1. **Bayesian hyperparameter optimization** (optional, for tuning) – Optuna sweeps 
-   Proteína's generative parameters (`guidance_weight`, `autoguidance_ratio`, 
+   Proteína's and ProteinMPNN's generative parameters (`guidance_weight`, `autoguidance_ratio`, 
    `caflow_noise_scale`, `sampling_temp`) by running the Nextflow pipeline 40+ times 
    (~20 min/trial) and measuring the % of high-confidence immunoglobulin hits.
 
