@@ -239,7 +239,7 @@ Using `AA+3Di` input (both sequence and structural alphabet) yields ~92% accurac
 ---
 
 ## 6. How ESMFold Works?
-
+![ESMFold architecture](/figures/esmfold_arch.jpg)
 ESMFold (Meta AI Research, 2022) is a **sequence-to-structure predictor** — given an amino acid sequence, it predicts the full 3D atomic structure of the protein. In this pipeline it acts as a **post-pipeline structural validator**: after CATHe2 has classified sequences, the highest-confidence candidates (≥98% prediction probability) are folded into PDB structures so their geometry can be verified independently of sequence-based classification.
 
 ### 6.1 Protein Language Model Backbone
