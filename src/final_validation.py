@@ -4,8 +4,8 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent
 BEST_DESIGNS = ROOT / "results/best_designs.csv"
 FOLDSEEK_RESULTS = ROOT / "results/foldseek/foldseek_results.txt"
-OUT_CSV = ROOT / "results/best_200_validated_sequences.csv"
 OUT_TXT = ROOT / "results/best_200_validated_sequences.txt"
+OUT_FASTA = ROOT / "results/best_200_validated_sequences.fasta"
 
 foldseek_cols = [
     "query", "target", "fident", "alnlen", "mismatch", "gapopen",
@@ -44,8 +44,11 @@ print(f"Has 2.60.40.x hit:      {result['has_2_60_40_hit'].sum()}")
 validated = result[result["has_2_60_40_hit"]].head(200)
 sequences = validated["Sequence"]
 
-sequences.to_csv(OUT_CSV, index=False)
 with open(OUT_TXT, "w") as f:
     f.write("\n".join(sequences))
 
-print(f"Saved {len(sequences)} sequences to {OUT_CSV} and {OUT_TXT}")
+with open(OUT_FASTA, "w") as f:
+    for i, seq in enumerate(sequences):
+        f.write(f">seq_{i}\n{seq}\n")
+
+print(f"Saved {len(sequences)} sequences to {OUT_TXT} and {OUT_FASTA}")
