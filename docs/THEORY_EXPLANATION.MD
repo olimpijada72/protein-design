@@ -1,5 +1,48 @@
 # Explanation of Theoretical Aspects 
 
+## Table of Contents
+
+1. [Protein Biology Fundamentals](#1-protein-biology-fundamentals)
+   - [1.1 What is a Protein and What is it Made of?](#11-what-is-a-protein-and-what-is-it-made-of)
+   - [1.2 Protein Structure](#12-protein-structure)
+   - [1.3 Key Functional Categories](#13-key-functional-categories)
+   - [1.4 CATH Classification System](#14-cath-classification-system)
+   - [1.5 Immunoglobulin (Ig)](#15-immunoglobulin-ig)
+2. [Protein Representation in Machine Learning](#2-protein-representation-in-machine-learning)
+   - [2.1 File Formats](#21-file-formats)
+   - [2.2 Representations](#22-representations)
+3. [How Proteina Works?](#3-how-proteina-works)
+   - [3.1 What it generates](#31-what-it-generates)
+   - [3.2 Diffusion vs Flow Matching](#32-diffusion-vs-flow-matching)
+   - [3.3 CATH Conditioning](#33-cath-conditioning)
+   - [3.4 Architecture](#34-architecture)
+4. [How ProteinMPNN Works?](#4-how-proteinmpnn-works)
+   - [4.1 Graph Representation](#41-graph-representation)
+   - [4.2 Message Passing](#42-message-passing)
+   - [4.3 Autoregressive Decoding](#43-autoregressive-decoding)
+5. [How CATHe2 Works?](#5-how-cathe2-works)
+   - [5.1 Protein Language Models](#51-protein-language-models)
+   - [5.2 ANN Classifier](#52-ann-classifier)
+6. [How ESMFold Works?](#6-how-esmfold-works)
+   - [6.1 Protein Language Model Backbone](#61-protein-language-model-backbone)
+   - [6.2 Structure Module](#62-structure-module)
+7. [How FoldSeek Works?](#7-how-foldseek-works)
+   - [7.1 The 3Di Structural Alphabet](#71-the-3di-structural-alphabet)
+   - [7.2 Fast Structure Search](#72-fast-structure-search)
+   - [7.3 CATH50 Database](#73-cath50-database)
+
+8. [Bayesian Hyperparameter Optimization](#8-bayesian-hyperparameter-optimization)
+   - [8.1 The Optimization Target](#81-the-optimization-target)
+   - [8.2 Tree-Structured Parzen Estimator (TPE)](#82-tree-structured-parzen-estimator-tpe)
+   - [8.3 Per-Length Studies](#83-per-length-studies)
+   - [8.4 Warm-Start from Prior Experiments](#84-warm-start-from-prior-experiments)
+9. [Pipeline Integration](#9-pipeline-integration)
+   - [Stage 1 — Hyperparameter Search](#stage-1--hyperparameter-search-optional)
+   - [Stage 2 — Main Nextflow Pipeline](#stage-2--main-nextflow-pipeline)
+   - [Stage 3 — Post-Pipeline Structural Validation](#stage-3--post-pipeline-structural-validation)
+
+---
+
 ## 1. Protein Biology Fundamentals
 
 ### 1.1. What is a Protein and What is it Made of?
@@ -223,22 +266,153 @@ Using `AA+3Di` input (both sequence and structural alphabet) yields ~92% accurac
 
 ---
 
-## 6. Pipeline Integration
+## 6. How ESMFold Works?
 
-The three models are chained together using **Nextflow**, a workflow framework that manages process dependencies, parallelism, and file passing between steps.
+ESMFold (Meta AI Research, 2022) is a **sequence-to-structure predictor** — given an amino acid sequence, it predicts the full 3D atomic structure of the protein. In this pipeline it acts as a **post-pipeline structural validator**: after CATHe2 has classified sequences, the highest-confidence candidates (≥98% prediction probability) are folded into PDB structures so their geometry can be verified independently of sequence-based classification.
+
+### 6.1 Protein Language Model Backbone
+
+Unlike AlphaFold2, which requires a Multiple Sequence Alignment (MSA) of evolutionary relatives, ESMFold is **MSA-free**. It is built on top of **ESM-2**, a protein language model with 650M–15B parameters trained on ~250 million protein sequences. ESM-2 produces rich per-residue embeddings that encode evolutionary and structural information from a single input sequence alone.
+
+This makes ESMFold:
+- **Fast** — no MSA computation needed; structure prediction takes seconds per sequence.
+- **Single-sequence** — ideal for *de novo* designed proteins that have no natural homologs to align against.
+
+### 6.2 Structure Module
+
+On top of the ESM-2 trunk, ESMFold adds a **folding trunk** and a **structure module** borrowed from AlphaFold2:
+- The folding trunk processes pairwise residue-residue representations.
+- The structure module uses **Invariant Point Attention (IPA)** to predict backbone rigid-body frames (rotation + translation) for each residue and iteratively refine them.
+- Side chains are predicted via a torsion angle head applied to the refined backbone.
+
+The output is a full-atom PDB file with per-residue **pLDDT** (predicted Local Distance Difference Test) confidence scores ranging from 0–100. High pLDDT (>70) indicates a confident, well-resolved prediction; low pLDDT indicates a disordered or uncertain region.
+
+
+## 7. How FoldSeek Works?
+
+FoldSeek (van Kempen et al., 2023) is a **structure-to-structure search tool** — it finds structurally similar proteins in large databases at speeds comparable to sequence search. In this pipeline it is used after ESMFold to verify that the predicted 3D structures of candidate sequences actually resemble known immunoglobulin proteins in the **CATH50 database**, providing a second, independent validation channel.
+
+### 7.1 The 3Di Structural Alphabet
+
+The key innovation in FoldSeek is the **3Di structural alphabet** — a 20-letter encoding of local 3D structural context. For each residue, FoldSeek:
+1. Examines the spatial arrangement of the residue and its nearest 3D neighbors.
+2. Assigns one of 20 discrete "structural letters" based on this local geometry.
+
+This converts a 3D protein structure into a **1D string over a 20-symbol alphabet**, analogous to an amino acid sequence. CATHe2 uses 3Di sequences as one of its optional inputs (alongside amino acid sequences) for the same reason — local structural context compressed into a sequence-like representation.
+
+### 7.2 Fast Structure Search
+
+Once a structure is encoded as a 3Di string, structure-to-structure alignment reduces to **sequence alignment** — a much faster problem than full 3D superposition. FoldSeek applies the same dynamic programming algorithms used in MMseqs2 to align 3Di strings, achieving structural search **2–3 orders of magnitude faster** than tools like TM-align or DALI.
+
+The search returns a tab-separated results file with: query name, target name, sequence identity (`fident`), alignment length, e-value, and bit score. The `final_validation.py` script reads this file to check whether each designed sequence has a structural hit classified as 2.60.40.x in CATH.
+
+### 7.3 CATH50 Database
+
+This pipeline searches against **CATH50**, a non-redundant database of CATH structural domains clustered at 50% sequence identity. Each entry carries its full CATH label (e.g., `2.60.40.10`), so FoldSeek hits can be directly cross-referenced against the target Ig-like fold family.
+
+
+---
+
+## 8. Bayesian Hyperparameter Optimization
+
+The pipeline has four continuous parameters that strongly influence what fraction of generated sequences are correctly classified as immunoglobulin-like:
+
+| Parameter | Controls |
+|---|---|
+| `guidance_weight` | Strength of CATH fold conditioning (CFG amplification) |
+| `autoguidance_ratio` | How much autoguidance correction is applied during sampling |
+| `caflow_noise_scale` | Noise injection strength during SDE backbone generation |
+| `sampling_temp` | ProteinMPNN sequence diversity (see section 4.3) |
+
+Rather than tuning these by hand, the pipeline uses **Bayesian Hyperparameter Optimization (HPO)** via Optuna to automatically search for parameter combinations that maximize the fraction of high-confidence immunoglobulin hits.
+
+### 8.1 The Optimization Target
+
+The objective metric is **`pct_target_fold_high_conf`** — the percentage of generated sequences that CATHe2 classifies as 2.60.40.x with prediction probability ≥ 0.7. This is evaluated **per protein length** (separately for 95, 100, 105, 110, and 115-residue chains), because the optimal generative parameters differ between lengths.
+
+### 8.2 Tree-Structured Parzen Estimator (TPE)
+
+Bayesian HPO works by building a **probabilistic surrogate model** of the objective function and using it to propose the next parameter set to try, rather than sampling blindly. Optuna uses the **Tree-Structured Parzen Estimator (TPE)** algorithm:
+
+1. **Partition trials by quality** — after each trial, completed runs are split into "good" (*l(x)*) and "bad" (*g(x)*) groups based on a quantile threshold.
+2. **Fit kernel density estimators** — separate KDEs are fitted over the good and bad parameter distributions.
+3. **Sample where l(x)/g(x) is highest** — new parameter proposals are drawn from regions that are more likely under the good distribution than the bad one.
+4. **Update and repeat** — after each new trial, the models are updated.
+
+This concentrates sampling in promising regions of parameter space, converging on good configurations far faster than random or grid search.
+
+### 8.3 Per-Length Studies
+
+Each protein length gets its own independent Optuna study, persisted in a SQLite database (`optuna_hpo_len<N>.db`). Studies can be resumed across sessions and inspected with the Optuna dashboard. After optimization, the best parameters per length are written to `results/best_params_per_length.json` and used for the final large-scale run.
+
+### 8.4 Warm-Start from Prior Experiments
+
+Before running new trials, the optimizer is seeded with any existing results from `results/experiments.csv` via the `load_warmup` function. This **warm-start** lets Optuna build an initial surrogate model from hand-tuned or previously explored configurations, reducing the number of new pipeline runs needed to converge.
+
+
+---
+
+## 9. Pipeline Integration
+
+The full pipeline operates in **three sequential stages**, orchestrated by a combination of Optuna (Bayesian HPO), Nextflow (main workflow), and standalone scripts (post-pipeline validation).
+
+### Stage 1 — Hyperparameter Search (Optional)
+
+Bayesian HPO tunes the four core generative parameters by running the full Nextflow pipeline ~40 times per target protein length and maximizing `pct_target_fold_high_conf`.
 
 ```
-Proteina ──► ProteinMPNN ──► CATHe2
-  (PDB)         (FASTA)       (CSV)
+Optuna (TPE) ──► Nextflow pipeline run ──► read metric ──► update surrogate
+                       (×40 trials)
+```
+
+Best parameters are saved to `results/best_params_per_length.json`.
+
+### Stage 2 — Main Nextflow Pipeline
+
+Using the best-found parameters, a final large-scale run generates and classifies candidates:
+
+```
+Proteina ──► ProteinMPNN ──► CATHe2 ──► GENERATE_REPORT ──► LOG_RUN
+  (PDB)         (FASTA)       (CSV)        (HTML/CSV)         (JSON)
 ```
 
 **Step 1 — GENERATE_BACKBONES (Proteina)**
 Proteina generates backbone PDB files conditioned on CATH code `2.60.40.x` — the Ig-like β-sandwich fold. The backbones contain only Cα coordinates; no sequence is assigned yet.
 
 **Step 2 — RUN_MPNN (ProteinMPNN)**
-Each PDB backbone is passed individually to ProteinMPNN (in `--ca_only` mode). It generates 50 candidate amino acid sequences per backbone at temperature 0.3, output as FASTA files. This step runs in parallel over all backbones (Nextflow flattens the PDB list into a stream).
+Each PDB backbone is passed individually to ProteinMPNN (in `--ca_only` mode). It generates 200 candidate amino acid sequences per backbone at temperature 0.925228, output as FASTA files. This step runs in parallel over all backbones (Nextflow flattens the PDB list into a stream).
 
 **Step 3 — RUN_CATHE (CATHe2)**
-All FASTA files are collected and merged into one batch. CATHe2 embeds each sequence with ProstT5, classifies it, and writes a `classifications.csv`. This tells us how many of the generated-then-designed sequences are predicted to fall within the target Ig-like fold, the key quality signal for the whole pipeline.
+All FASTA files are collected and merged into one batch. CATHe2 embeds each sequence with ProstT5, classifies it, and writes a `classifications.csv`. Sequences with CATHe2 prediction probability ≥ 0.7 for the 2.60.40 superfamily pass the primary filter.
 
-The end-to-end question the pipeline answers: *can we reliably generate novel Ig-like protein sequences from scratch?*
+**Step 4 — GENERATE_REPORT**
+The report script filters to 2.60.40 hits, computes per-length statistics, generates a `report.html`, and writes `top_designs.csv` with the best candidates sorted by CATHe2 probability.
+
+**Step 5 — LOG_RUN**
+Run parameters and per-length metrics are appended to `results/experiments.csv` so Bayesian HPO can consume them in future optimization trials.
+
+### Stage 3 — Post-Pipeline Structural Validation
+
+The highest-confidence sequence candidates from Stage 2 are validated through a two-step structural pipeline:
+
+```
+top_designs.csv (CATHe2 ≥ 98%)
+        ↓
+    ESMFold ──► PDB structures
+        ↓
+    FoldSeek ──► structural search vs. CATH50
+        ↓
+  cross-reference CATHe2 + FoldSeek hits
+        ↓
+  best_200_validated_sequences.fasta
+```
+
+**Step 6 — ESMFold**
+Top candidates (CATHe2 probability ≥ 98%) are folded into full-atom PDB structures. 
+
+**Step 7 — FoldSeek**
+ESMFold-predicted structures are searched against the CATH50 database. FoldSeek encodes each structure as a 3Di string and performs fast structure-to-structure alignment, returning the closest CATH-labeled hits for each designed sequence.
+
+**Step 8 — Final Validation**
+`final_validation.py` cross-references CATHe2 labels (sequence-based) with FoldSeek CATH hits (structure-based). Sequences confirmed by both channels — CATHe2 predicts 2.60.40.x and FoldSeek finds a 2.60.40.x structural match — are ranked and the top 200 are written to `best_200_validated_sequences.fasta`.
+
