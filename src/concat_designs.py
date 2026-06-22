@@ -3,8 +3,9 @@
 import pandas as pd
 from pathlib import Path
 
-artifacts_dir = Path("/Users/mipopovic/Desktop/protein-design/results/artifacts/")
-output_path = Path("/Users/mipopovic/Desktop/protein-design/results/all_designs.csv")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+artifacts_dir = PROJECT_ROOT / "results" / "artifacts"
+output_path = PROJECT_ROOT / "results" / "all_designs.csv"
 
 dfs = []
 for csv_path in sorted(artifacts_dir.glob("*/top_designs.csv")):
