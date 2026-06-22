@@ -313,13 +313,7 @@ Bayesian HPO works by building a **probabilistic surrogate model** of the object
 
 This concentrates sampling in promising regions of parameter space, converging on good configurations far faster than random or grid search.
 
-### 8.3 Per-Length Studies
 
-Each protein length gets its own independent Optuna study, persisted in a SQLite database (`optuna_hpo_len<N>.db`). Studies can be resumed across sessions and inspected with the Optuna dashboard. After optimization, the best parameters per length are written to `results/best_params_per_length.json` and used for the final large-scale run.
-
-### 8.4 Warm-Start from Prior Experiments
-
-Before running new trials, the optimizer is seeded with any existing results from `results/experiments.csv` via the `load_warmup` function. This **warm-start** lets Optuna build an initial surrogate model from hand-tuned or previously explored configurations, reducing the number of new pipeline runs needed to converge.
 
 
 ---
