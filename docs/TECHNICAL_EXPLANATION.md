@@ -1,28 +1,62 @@
-# Protein Design Pipeline: Technical Documentation
-TO-DO list:
-- Update documentation 
-    - bayesian optimization
-    - ESMFold
-    - FoldSeek
-    - all the other little stuff
+# Protein Design Pipeline: Technical Reference
 
-> End-to-end technical guide for backbone generation, sequence design,
-> fold validation, and Nextflow orchestration.
+> How the pipeline is implemented — processes, configuration, scripts, and data flow.
+> For the theoretical background on each model, see `docs/THEORY_EXPLANATION.MD`.
 
 ---
 
 ## Table of Contents
 
-1. [Proteína — Backbone Generation](#1-proteína--backbone-generation)
-2. [ProteinMPNN — Sequence Design](#2-proteinmpnn--sequence-design)
-3. [CATHe — Fold Validation](#3-cathe--fold-validation)
-4. [Nextflow Pipeline](#4-nextflow-pipeline)
-5. [Core Design Tactics](#5-core-design-tactics)
-6. [Reproducible Commands](#6-reproducible-commands)
+1. [Data Flow](#1-data-flow)
+2. [Proteína — Backbone Generation](#2-proteína--backbone-generation)
+3. [ProteinMPNN — Sequence Design](#3-proteinmpnn--sequence-design)
+4. [CATHe2 — Fold Classification](#4-cathe2--fold-classification)
+5. [Nextflow Pipeline (main.nf)](#5-nextflow-pipeline-mainnf)
+6. [Pipeline Configuration (nextflow.config)](#6-pipeline-configuration-nextflowconfig)
+7. [Bayesian HPO (bayes_opt.py)](#7-bayesian-hpo-bayes_optpy)
+8. [Post-Pipeline Scripts](#8-post-pipeline-scripts)
+9. [Artifact Layout](#9-artifact-layout)
 
 ---
 
-## 1. Proteína — Backbone Generation
+## 1. Data Flow
+
+```
+nextflow.config
+      │
+      ▼
+GENERATE_BACKBONES          → backbones/*.pdb
+      │ (flatten: one pdb per item)
+      ▼
+RUN_MPNN  ×N (parallel)     → seqs/*.fa  (per backbone)
+      │ (collect: all fastas)
+      ▼
+RUN_CATHE                   → classifications.csv
+      │
+      ├──► GENERATE_REPORT  → top_designs.csv, report.html
+      │          │
+      └──────────┴──► LOG_RUN → results/artifacts/<run_id>/
+                                results/experiments.csv
+```
+
+After the Nextflow pipeline, three standalone scripts handle post-processing:
+
+```
+concat_designs.py    → results/best_designs.csv, results/best_designs.fasta
+      │
+      ▼
+ESMFold (Colab)      → .pdb files
+      │
+      ▼
+run_foldseek.sh      → results/foldseek/foldseek_results.txt
+      │
+      ▼
+final_validation.py  → results/best_200_validated_sequences.fasta
+```
+
+---
+
+## 2. Proteína — Backbone Generation
 
 Flow-matching backbone generator: maps Gaussian noise → CATH-conditioned 3D protein structures.
 
@@ -32,21 +66,26 @@ Flow-matching backbone generator: maps Gaussian noise → CATH-conditioned 3D pr
 python inference_cond_sampling.py \
     --config_name inference_cond_autoguidance \
     --cath_codes 2.60.40.x \
-    --nsamples 1
+    --nsamples <N> \
+    seed=5 \
+    dt=0.0025 \
+    guidance_weight=1.015415 \
+    autoguidance_ratio=0.792596 \
+    sampling_caflow.sampling_mode=sc \
+    sampling_caflow.sc_scale_noise=0.262678 \
+    nres_lens=[95]
 ```
 
-Samples CATH-conditioned backbones via SDE-based flow matching with CFG + autoguidance.
+The pipeline calls Proteína using Hydra config overrides (the `key=value` arguments after the flags). This lets `nextflow.config` control all generative parameters without touching the Proteína source code or YAML files.
 
-### Why This Works
-
-Four complementary signals steer the model simultaneously:
+### Four Complementary Guidance Signals
 
 | Signal | Controls |
 |---|---|
-| CATH label | Macro-level fold class |
-| CFG | Semantic alignment to target fold |
-| Autoguidance | Physical realism correction |
-| Self-conditioning | Temporal consistency across timesteps |
+| CATH label | Macro-level fold class (topology level) |
+| CFG (`guidance_weight`) | Semantic alignment to target fold |
+| Autoguidance (`autoguidance_ratio`) | Physical geometry correction |
+| Self-conditioning (`self_cond: True`) | Temporal consistency across timesteps |
 
 Outputs are fold-consistent **and** geometrically realistic before any sequence design occurs.
 
@@ -56,36 +95,27 @@ Outputs are fold-consistent **and** geometrically realistic before any sequence 
 
 #### `--cath_codes 2.60.40.x`
 
-**What it does:** restricts sampling to a narrow structural manifold via the CATH hierarchy.
+Restricts sampling to the Ig-like β-sandwich fold family via the CATH hierarchy.
 
 | Level | Value | Meaning |
 |---|---|---|
 | Class | `2` | Mainly β-class proteins |
 | Architecture | `60` | β-sandwich-like structures |
-| Topology | `40` | Specific structural family |
+| Topology | `40` | Immunoglobulin-like fold family |
 | Homology | `x` | Wildcard (any superfamily) |
 
-**Why it matters:** reduces the generative search space to a single fold family; improves fold consistency and downstream MPNN success.
+The `x` wildcard means Proteína samples any superfamily within the 2.60.40 topology — the pipeline intentionally does not over-constrain here.
 
 #### `--config_name inference_cond_autoguidance`
 
-**What it does:** selects the sampling strategy; enables CFG + autoguidance correction.
+Selects the sampling config that enables CFG + autoguidance correction. Loads `inference_cond_autoguidance.yaml` on top of the base config:
 
-**Why it matters:** removes geometrically collapsed backbones and improves fold adherence.
-
----
-
-### Key Config Parameters
-
-Two configs drive Proteína: `inference_base.yaml` (defaults) and `inference_cond_autoguidance.yaml` (overrides).
-
-`inference_cond_autoguidance.yaml`
 ```yaml
+# inference_cond_autoguidance.yaml
 defaults:
   - inference_base
   - _self_
 
-run_name_: cond_autoguidance
 ckpt_name: proteina_v1.4_D21M_400M_tri.ckpt
 autoguidance_ckpt_path: "/path/to/proteina_v1.8_D21M_400M_tri_autoguidance.ckpt"
 self_cond: True
@@ -93,18 +123,17 @@ fold_cond: True
 cath_code_level: "T"
 guidance_weight: 2.0
 sampling_caflow:
-  sampling_mode: sc    # "vf" for ODE, "sc" for SDE
+  sampling_mode: sc
 ```
 
-One important thing for `inference_base.yaml`: here we define  `nres_lens : [95, 100, 105, 110, 115]`. That means that proteina willg generate backbones of those lengths.
-
+Parameters that appear here can be further overridden by the Nextflow pipeline via Hydra command-line overrides.
 
 <details>
 <summary>Full base config — inference_base.yaml</summary>
 
 ```yaml
 run_name_: "testing_IgFold_2.60.40_Sweep"
-ckpt_path: "/Users/mipopovic/Desktop/proteina/data/checkpoints"
+ckpt_path: "/path/to/proteina/data/checkpoints"
 ckpt_name:
 
 ncpus_: 24
@@ -135,7 +164,7 @@ len_cath_code_path: ${oc.env:DATA_PATH}/metric_factory/features/D_FS_afdb_cath_c
 
 guidance_weight: 2.0
 autoguidance_ratio: 0.5
-autoguidance_ckpt_path: "/Users/mipopovic/Desktop/proteina/data/checkpoints/proteina_v1.8_D21M_400M_tri_autoguidance.ckpt"
+autoguidance_ckpt_path: "/path/to/proteina_v1.8_D21M_400M_tri_autoguidance.ckpt"
 
 lora:
   use: false
@@ -167,398 +196,409 @@ Both produce the same marginal distributions for any `g_t`. Key parameters:
 
 </details>
 
+---
+
+### Key Config Parameters
+
 #### `ckpt_name: proteina_v1.4_D21M_400M_tri.ckpt`
 
-**What it does:** loads the primary generation model (21M AFDB structures, ~400M parameters).
-
-**Why it matters:** best long-chain performance (300–800 residues), fold diversity, and designability scores across benchmarks.
+Loads the primary generation model (trained on 21M AlphaFoldDB structures, ~400M parameters, uses triangular multiplicative update layers from AF3).
 
 #### `autoguidance_ckpt_path`
 
-**What it does:** loads a weaker early-training checkpoint (~10k steps) used as a geometry reference.
-
-**Why it matters:** the strong–weak vector field difference acts as a correction term during sampling — improves physical realism without retraining.
+Loads a weaker early-training checkpoint (~10k steps) used as a geometry reference. The vector field difference between the strong and weak checkpoints produces the autoguidance correction signal.
 
 | Component | Role |
 |---|---|
-| Strong checkpoint | Primary generation |
-| Weak checkpoint | Geometry correction reference |
-| Field difference | Autoguidance signal |
+| Strong checkpoint (`v1.4`) | Primary generation |
+| Weak checkpoint (`v1.8` early) | Geometry correction reference |
+| Field difference | Autoguidance correction signal |
 
 #### `self_cond: True`
 
-**What it does:** feeds the previous timestep's prediction back into the model as an additional input.
-
-**Why it matters:** reduces timestep noise and improves sampling stability for longer chains.
+Feeds the previous timestep's prediction back into the model as an additional input. Reduces per-step noise and improves sampling stability, especially for longer chains.
 
 #### `fold_cond: True`
 
-**What it does:** enables conditioning on the CATH class at the C/A/T hierarchy level.
+Enables conditioning on a CATH label at the level defined by `cath_code_level: "T"` (Topology). Without this, sampling is unconditional.
 
-**Why it matters:** the primary controllability mechanism — without it, sampling is unconditional.
+#### `guidance_weight`
 
-#### `guidance_weight: 2.0`
-
-**What it does:** controls CFG strength.
+Controls CFG strength. The value in the config (`1.015415`) was found by Bayesian HPO — see section 7.
 
 | Weight | Effect |
 |---|---|
 | < 1.0 | High diversity, weak fold control |
-| **2.0 (chosen)** | Balanced: fold correctness without mode collapse |
+| ~1.0 (Bayesian optimum) | Fold correctness maximized for 2.60.40 at length 95 |
 | > 3.0 | Strict fold adherence, reduced diversity |
 
-#### `sampling_mode: sc` / `sc_scale_noise: 0.3`
+#### `sampling_mode: sc` / `sc_scale_noise` (= `caflow_noise_scale`)
 
-**What it does:** uses SDE sampling with controlled noise injection.
-
-**Why it matters:** SDE (`sc`) produces more diverse outputs than ODE (`vf`); noise scale 0.3 avoids both mode collapse and structural instability.
+Uses SDE sampling with controlled noise injection. SDE (`sc`) produces more diverse outputs than ODE (`vf`). The noise scale (`0.262678`, Bayesian-optimized) avoids both mode collapse and structural instability.
 
 ---
 
-## 2. ProteinMPNN — Sequence Design
+## 3. ProteinMPNN — Sequence Design
 
-Solves inverse folding: given a fixed backbone, design amino acid sequences that fold into it.
+Solves inverse folding: given a fixed backbone, design amino acid sequences predicted to fold into it.
 
 ### Invocation
 
 ```bash
-python ${params.mpnn_script} \
+python protein_mpnn_run.py \
     --ca_only \
-    --pdb_path "${pdb}" \
+    --pdb_path "<pdb>" \
     --out_folder ./ \
-    --num_seq_per_target 50 \
-    --sampling_temp "0.3"
+    --num_seq_per_target 200 \
+    --sampling_temp "0.925228" \
+    --seed 37
 ```
 
 ### Key Parameters
 
 #### `--ca_only`
 
-**What it does:** uses only Cα coordinates instead of full-atom structure.
+Uses only Cα coordinates instead of full-atom structure.
 
-**Why it matters:** Proteína generates backbone-only outputs (no sidechains); Cα-only improves robustness for flow-generated backbones.
+Proteína generates Cα-only backbones (no sidechains). Running ProteinMPNN in `--ca_only` mode makes it consistent with this input — both node and edge features are derived purely from Cα positions.
 
-#### `--num_seq_per_target 50`
+#### `--num_seq_per_target 200`
 
-**What it does:** generates 50 candidate sequences per backbone.
+Generates 200 candidate sequences per backbone.
 
-**Why it matters:** sequence→structure mapping is many-to-one; 50 sequences increases the probability of recovering at least one that is thermodynamically stable and CATHe-consistent.
+The sequence→structure mapping is many-to-one: many sequences can fold into the same backbone. 200 sequences per backbone increases the probability of recovering at least one that is thermodynamically stable and CATHe-consistent.
 
-#### `--sampling_temp 0.3`
+#### `--sampling_temp 0.925228`
 
-**What it does:** controls sequence diversity during sampling.
+Controls sequence diversity during autoregressive decoding.
 
 | Temperature | Effect |
 |---|---|
-| 0.1–0.3 | Conservative, high-confidence sequences |
-| **0.3 (chosen)** | Prioritizes fold stability; reduces unfolded outputs |
-| 0.5–1.0 | Diverse but less reliable |
+| 0.1–0.3 | Conservative, high-confidence sequences; low diversity |
+| 0.5–0.9 | Balanced diversity and stability |
+| **0.925228 (Bayesian optimum)** | High diversity; maximizes immunoglobulin hit rate at length 95 |
+| > 1.0 | Very diverse; increased risk of unfolded outputs |
+
+The high temperature (relative to ProteinMPNN's typical 0.1–0.3 range) reflects the HPO finding that diversity matters more than per-sequence confidence for hitting the target fold at scale.
 
 ### Role in the Pipeline
 
 ```
-Backbone (Proteína)
+Backbone (Proteína)    ← Cα-only PDB
        ↓
-  ProteinMPNN          ← inverse folding
+  ProteinMPNN          ← inverse folding (200 sequences, T=0.925228, Cα-only)
        ↓
-     CATHe             ← fold classification & filtering
+     CATHe2            ← fold classification & filtering
 ```
 
 ---
 
-## 3. CATHe — Fold Validation
+## 4. CATHe2 — Fold Classification
 
-Classifies designed sequences into the CATH structural hierarchy — fold-level validation independent of ESMFold.
+Classifies designed sequences into CATH superfamilies. Serves as the primary filter — only sequences the model predicts to be 2.60.40.x pass to the output.
 
-### Invocation
+### Invocation (as run in the pipeline)
+
+The pipeline merges all FASTA outputs from ProteinMPNN, copies them to CATHe2's fixed input path, and runs classification from inside the CATHe2 root directory:
 
 ```bash
-python src/cathe-predict/cathe_predictions.py \
-    --model ProstT5 \
-    --input_type AA \
-    --fasta outputs/sequences/seqs.fa \
-    --out_csv outputs/metrics/cathe_labels.csv
+cat *.fa > merged.fasta
+cp merged.fasta external/CATHe2/src/cathe-predict/sequences.fasta
+cd external/CATHe2
+python src/cathe-predict/cathe_predictions.py --model ProstT5 --input_type AA
 ```
 
-### CATH Hierarchy
+CATHe2 writes its output to a `Results.csv` inside its own directory tree; the pipeline locates it with `find` and copies it to the Nextflow working directory as `classifications.csv`.
 
-```
-C → Class       (alpha, beta, alpha/beta, ...)
-A → Architecture
-T → Topology    (fold family)
-H → Homologous superfamily
-```
+CATHe2 runs in a Python venv (`external/CATHe2/venv_2`) rather than a conda env because it needs to be invoked from within its own directory structure.
 
-### Why ProstT5?
+### Output columns
 
-Protein language model trained on evolutionary sequence data; captures both evolutionary signal and structural context. Outperforms ESM-based classifiers on fold classification benchmarks.
+| Column | Description |
+|---|---|
+| `Sequence` | Amino acid sequence |
+| `CATHe_Predicted_SFAM` | Predicted CATH superfamily (e.g. `2.60.40.10`) |
+| `CATHe_Prediction_Probability` | Confidence score (0–1) |
+| `Record` | ProteinMPNN FASTA header (`T=`, `global_score=`, `seq_recovery=`) |
+
+### Why `--input_type AA` (AA-only, no 3Di)
+
+CATHe2 can accept both amino acid sequences (`AA`) and 3Di structural alphabet sequences (`AA+3Di`). The pipeline uses AA-only because:
+- No PDB structures are available at this stage — only sequences output by ProteinMPNN.
+- AA-only still achieves strong classification performance; the heavy lifting is done by the ProstT5 language model embeddings.
 
 ### Role in the Pipeline
 
 | Use | Description |
 |---|---|
-| Fold consistency | Verify predicted fold matches intended CATH class |
-| Sequence filtering | Discard sequences assigned to the wrong fold family |
-| Comparative analysis | Compare predicted vs. target CATH label across all outputs |
+| Primary filter | Keeps sequences predicted as 2.60.40.x |
+| Confidence threshold | `top_designs.csv` contains all 2.60.40 hits; `best_designs.csv` applies ≥ 98% cutoff |
+| HPO objective | `pct_target_fold_high_conf` drives Bayesian optimization |
 
 ---
 
-## 4. Nextflow Pipeline
+## 5. Nextflow Pipeline (main.nf)
 
-Orchestrates the full design-validate-filter loop as a **directed acyclic graph (DAG)** of processes.
+Orchestrates the full design-validate-filter loop as a directed acyclic graph (DAG) of processes. Each process runs in an isolated working directory under `.nextflow/work/`.
 
-### Pipeline Structure
-TO-DO: make Filter & export designable sequences
+### Process: GENERATE_BACKBONES
 
-```
-Proteína     →  CATH-conditioned backbone generation (for lengths defined in nres_lens)
-     ↓
-ProteinMPNN  →  inverse folding (50 sequences/backbone)
-     ↓
-CATHe        →  fold classification & filtering
-     ↓
-Filter & export designable sequences
-```
+**Env:** `proteina_env` (conda)
 
-### Why Nextflow?
+Calls `inference_cond_sampling.py` with Hydra overrides sourced from `nextflow.config`. After generation, all `.pdb` files are moved to a `backbones/` subdirectory.
 
-| Property | What it provides |
-|---|---|
-| **Reproducibility** | Same DAG every run; no manual step ordering; no missed intermediates |
-| **Parallelization** | Backbone sampling, MPNN design, ESMFold, and CATHe run concurrently |
-| **Fault tolerance** | Per-sample failures are logged; remaining samples continue unaffected |
+**Output channel:** `backbones/*.pdb`
 
-Example process definition:
+---
+
+### Process: RUN_MPNN
+
+**Env:** `proteina_env` (conda)
+
+Runs ProteinMPNN on a **single PDB file**. Nextflow's `.flatten()` splits the backbone channel so this process runs in parallel across all backbones — each backbone is processed independently.
+
+**Input:** one `.pdb` file  
+**Output channel:** `seqs/*.fa`
+
+---
+
+### Process: RUN_CATHE
+
+**Env:** `external/CATHe2/venv_2` (Python venv, activated via `beforeScript`)
+
+Receives all FASTA files at once (gathered with `.collect()`), merges them into a single batch, and runs CATHe2 classification on the full set.
+
+**Input:** all `.fa` files from RUN_MPNN  
+**Output:** `classifications.csv`
+
+---
+
+### Process: GENERATE_REPORT
+
+**Env:** `protein_design_env` (conda)
+
+Runs `src/generate_report.py`. Filters `classifications.csv` to sequences where `CATHe_Predicted_SFAM` contains `"2.60.40"`, computes per-length statistics, and generates a sequence diversity heatmap (normalized Levenshtein distance on up to 50 sequences).
+
+**Input:** `classifications.csv`  
+**Output:** `report.html`, `top_designs.csv`
+
+`top_designs.csv` columns: `Sequence`, `CATHe_Prediction_Probability`, `CATHe_Predicted_SFAM`, `seq_len`, `temperature`, `global_score`, `seq_recovery` — sorted by probability descending.
+
+---
+
+### Process: LOG_RUN
+
+**Env:** `protein_design_env` (conda)
+
+Generates a unique `run_id` (`YYYYMMDD_HHMMSS_<6 hex chars>`), runs `src/log_run.py` to append metrics to `results/experiments.csv`, and copies all artifacts to a per-run subdirectory.
+
+**Inputs:** `classifications.csv`, `report.html`, `top_designs.csv`  
+**Side effects:** writes to `results/experiments.csv` and `results/artifacts/<run_id>/`
+
+---
+
+### Workflow Orchestration
 
 ```nextflow
-process MPNN_DESIGN {
-    input:
-        path pdb
-    output:
-        path "seqs/*.fa"
-
-    script:
-    """
-    python ${params.mpnn_script} \
-        --ca_only \
-        --pdb_path ${pdb} \
-        --out_folder ./ \
-        --num_seq_per_target ${params.num_seqs} \
-        --sampling_temp ${params.temp}
-    """
-}
-```
-TO-DO: actually make a nextflow config that does this
-### `nextflow.config` — Key Parameters
-
-```groovy
-params {
-    num_backbones     = 100
-    length_min        = 95
-    length_max        = 115
-
-    num_seqs          = 50
-    sampling_temp     = "0.3"
-    ca_only           = true
-
-    cfg_weight        = 2.0
-    ag_weight         = 1.5
-    noise_scale       = 0.3
-
-    cathe_match       = true
+workflow {
+    backbones_ch = GENERATE_BACKBONES()
+    pdb_ch       = backbones_ch.pdbs.flatten()          // one pdb per channel item
+    fastas_ch    = RUN_MPNN(pdb_ch)                     // parallel over all pdbs
+    cathe_ch     = RUN_CATHE(fastas_ch.fastas.collect()) // all fastas in one batch
+    report_ch    = GENERATE_REPORT(cathe_ch)
+    LOG_RUN(cathe_ch, report_ch.html, report_ch.csv)
 }
 ```
 
-### Design Philosophy
-
-> **"Generate many → filter aggressively → keep only designable proteins"**
-
-Flow matching produces many geometrically marginal samples. Biological validity is sparse in the raw output distribution. CATHe filtering removes fold-inconsistent sequences before downstream use.
+- `.flatten()` splits the PDB list into individual items → RUN_MPNN runs once per PDB file in parallel.
+- `.collect()` waits for all RUN_MPNN processes to finish before starting RUN_CATHE → classification runs on the full batch.
 
 ---
 
-## 5. Core Design Tactics
+## 6. Pipeline Configuration (nextflow.config)
 
-### Hierarchical CATH Conditioning
+All parameters live in `pipeline/nextflow.config` and can be overridden on the command line.
 
-Each backbone is conditioned on a target CATH label at the Topology (T) level:
+### Environment and Script Paths
 
-```
-Class (C) → Architecture (A) → Topology (T)
-```
+| Parameter | Value |
+|---|---|
+| `params.protein_design_env` | `/opt/miniconda3/envs/protein_design_env` |
+| `params.proteina_env` | `/opt/miniconda3/envs/proteina_env` |
+| `params.cathe_venv` | `external/CATHe2/venv_2` |
+| `params.proteina_script` | `external/proteina/script_utils/inference_cond_sampling.py` |
+| `params.mpnn_script` | `external/proteina/ProteinMPNN/protein_mpnn_run.py` |
 
-Reduces the generative search space to a single fold family; enables targeted fold design (e.g., "generate a β-sandwich").
+### Tunable Parameters
 
-### Dual Guidance System
+The current defaults are the Bayesian-optimized values for length 95. See section 7 for how these were found.
 
-| Guidance | Mechanism | Effect |
+| Parameter | Default | What it controls |
 |---|---|---|
-| **CFG** | Amplifies CATH-conditioned signal | Enforces fold adherence |
-| **Autoguidance** | Vector field correction via strong–weak checkpoint contrast | Enforces physical geometry |
+| `proteina.nsamples` | `10` | Number of backbones to generate |
+| `proteina.nres_lens` | `[95]` | Protein length(s) to generate |
+| `proteina.seed` | `5` | Proteína random seed |
+| `proteina.dt` | `0.0025` | SDE integration step size |
+| `proteina.guidance_weight` | `1.015415` | CFG strength |
+| `proteina.autoguidance_ratio` | `0.792596` | Autoguidance correction weight |
+| `proteina.sampling_mode` | `"sc"` | `"sc"` = SDE, `"vf"` = ODE |
+| `proteina.caflow_noise_scale` | `0.262678` | SDE noise injection amplitude |
+| `mpnn.num_seq_per_target` | `200` | Sequences designed per backbone |
+| `mpnn.sampling_temp` | `0.925228` | ProteinMPNN sampling temperature |
+| `mpnn.seed` | `37` | ProteinMPNN random seed |
 
-The two failure modes — wrong fold and bad geometry — are addressed independently.
+### Overriding Parameters on the Command Line
 
-### Model Hierarchy for Autoguidance
+```bash
+# Run with multiple lengths
+nextflow run main.nf -with-conda --proteina.nres_lens "95,100,105,110,115"
 
-| Model | Checkpoint | Role |
+# Override individual generative parameters
+nextflow run main.nf -with-conda \
+    --proteina.guidance_weight 2.0 \
+    --proteina.caflow_noise_scale 0.3
+
+# Resume after a partial failure
+nextflow run main.nf -with-conda -resume
+```
+
+---
+
+## 7. Bayesian HPO (bayes_opt.py)
+
+`src/bayes_opt.py` wraps the Nextflow pipeline in an Optuna optimization loop. Each trial is one full pipeline run; the objective is to maximize `pct_target_fold_high_conf` for a single target length.
+
+### Search Space
+
+| Parameter | Range |
+|---|---|
+| `guidance_weight` | 0.5 – 4.0 |
+| `autoguidance_ratio` | 0.0 – 1.0 |
+| `caflow_noise_scale` | 0.2 – 0.6 |
+| `sampling_temp` | 0.1 – 1.0 |
+
+(`sampling_temp` here is ProteinMPNN's temperature, passed as `--mpnn.sampling_temp`.)
+
+### How a Trial Works
+
+1. Optuna's TPE sampler proposes a parameter set.
+2. `bayes_opt.py` invokes the pipeline as a subprocess:
+   ```bash
+   nextflow run main.nf -with-conda \
+       --proteina.guidance_weight <v> \
+       --proteina.autoguidance_ratio <v> \
+       --proteina.caflow_noise_scale <v> \
+       --mpnn.sampling_temp <v> \
+       --proteina.nres_lens <N>
+   ```
+3. After the pipeline completes, `experiments.csv` is read to find the new `run_id` and retrieve `pct_target_fold_high_conf` for the target length.
+4. The metric is returned to Optuna, which updates its surrogate model.
+
+Each study is length-specific and persisted as a SQLite database at `results/optuna_hpo_len<N>.db`.
+
+### Warm-Start
+
+On startup (unless `--no-warmup`), the script seeds the study with all prior rows for that length from `experiments.csv`. This means any pipeline runs performed before HPO are automatically incorporated — no wasted experiments.
+
+### Output
+
+```json
+// results/best_params_per_length.json
+{
+  "95": {
+    "study_name": "hpo_len95",
+    "n_completed_trials": 40,
+    "best_pct_target_fold_high_conf": 63.4,
+    "best_params": {
+      "guidance_weight": 1.015415,
+      "autoguidance_ratio": 0.792596,
+      "caflow_noise_scale": 0.262678,
+      "sampling_temp": 0.925228
+    }
+  }
+}
+```
+
+The values in `nextflow.config` were copied from this file after HPO completed.
+
+---
+
+## 8. Post-Pipeline Scripts
+
+These scripts run after one or more pipeline runs are complete. They are not part of the Nextflow DAG.
+
+---
+
+### concat_designs.py
+
+Reads all `top_designs.csv` files from `results/artifacts/*/`, deduplicates by sequence, applies a confidence filter, and writes consolidated outputs.
+
+**Probability threshold:** `CATHe_Prediction_Probability > 0.98`
+
+| Output file | Contents |
+|---|---|
+| `results/all_designs.csv` | All unique 2.60.40 sequences across all runs |
+| `results/best_designs.csv` | Subset with CATHe probability > 98%, sorted descending |
+| `results/best_designs.fasta` | Same sequences in FASTA format (`>seq_0`, `>seq_1`, …) |
+
+`best_designs.fasta` is the input for ESMFold structure prediction.
+
+---
+
+### final_validation.py
+
+Cross-references CATHe2 sequence classification with FoldSeek structural search results to produce the final validated candidate set.
+
+**Inputs:**
+- `results/best_designs.csv`
+- `results/foldseek/foldseek_results.txt`
+
+**Parsing:**
+- `seq_id` is extracted from the FoldSeek query name using the regex `seq_\d+` (ProteinMPNN appends `_ptm` and other suffixes to sequence IDs in FASTA headers).
+- `cath_hit` is extracted from the FoldSeek target name using the regex `\d+\.\d+\.\d+\.\d+$`.
+
+**FoldSeek output columns:** `query`, `target`, `fident`, `alnlen`, `mismatch`, `gapopen`, `qstart`, `qend`, `tstart`, `tend`, `evalue`, `bits`
+
+**Validation logic:**
+
+| Check | Condition | Use |
 |---|---|---|
-| **Strong** | `proteina_v1.4_D21M_400M_tri.ckpt` | Primary generation |
-| **Weak** | Early checkpoint (~10k steps) | Geometry correction reference |
+| `exact_cath_match` | FoldSeek hit CATH == `CATHe_Predicted_SFAM` | Diagnostic only (printed to stdout) |
+| `has_2_60_40_hit` | Any FoldSeek hit starts with `"2.60.40."` | Selection criterion for final output |
 
-### Parameter Reference
+Sequences passing `has_2_60_40_hit`, up to 200, are written to the output files.
 
-| Parameter | Value | Rationale |
-|---|---|---|
-| CFG weight | `2.0` | Balances fold control vs. diversity |
-| AG weight | `~1.5` | Improves backbone geometry |
-| Noise scale | `0.3` | Stable SDE sampling; avoids mode collapse |
-| Length range | `95–115 aa` | Optimal designability window |
-| Sampling mode | `sc` (SDE) | Better diversity than ODE (`vf`) |
-| MPNN temp | `0.3` | Prioritizes sequence stability |
-| Sequences/backbone | `50` | Sufficient coverage of sequence space |
-| CATH guidance level | `T` | Specific enough for fold control; general enough for diversity |
+| Output file | Contents |
+|---|---|
+| `results/best_200_validated_sequences.txt` | Final sequences as plain text (one per line) |
+| `results/best_200_validated_sequences.fasta` | Same in FASTA format (`>seq_0`, …) |
 
 ---
 
-## 6. Reproducible Commands
-
-TO-DO make this pipeline run like this
-### Full Pipeline Run
-
-```bash
-nextflow run main.nf \
-    --cath_class "2.60.40" \
-    --num_backbones 100 \
-    --num_seqs 50 \
-    --cfg_weight 2.0 \
-    --ag_weight 1.5 \
-    --sampling_temp 0.3 \
-    -profile gpu \
-    -resume
-```
-
-> `-resume` restores cached process outputs — skips completed steps after a partial failure.
-
----
-
-### Step 1 — Backbone Generation (Proteína)
-
-```bash
-python inference_cond_sampling.py \
-    --config_name inference_cond_autoguidance \
-    --cath_codes 2.60.40.x \
-    --nsamples 100
-```
-
----
-
-### Step 2 — Sequence Design (ProteinMPNN)
-
-```bash
-# Single PDB
-python /path/to/protein_mpnn_run.py \
-    --ca_only \
-    --pdb_path outputs/backbones/sample_001.pdb \
-    --out_folder outputs/sequences/ \
-    --num_seq_per_target 50 \
-    --sampling_temp 0.3
-
-# Batch — all PDBs in a folder
-for pdb in outputs/backbones/*.pdb; do
-    python /path/to/protein_mpnn_run.py \
-        --ca_only \
-        --pdb_path "${pdb}" \
-        --out_folder outputs/sequences/ \
-        --num_seq_per_target 50 \
-        --sampling_temp 0.3
-done
-```
-
----
-
-### Step 3 — Fold Classification (CATHe)
-
-```bash
-python src/cathe-predict/cathe_predictions.py \
-    --model ProstT5 \
-    --input_type AA \
-    --fasta outputs/sequences/seqs.fa \
-    --out_csv outputs/metrics/cathe_labels.csv
-```
-
----
-
-
-TO-DO add filtering step
-### Step 4 — Filter by Fold Match
-
-```bash
-python src/filter_designable.py \
-    --cathe_csv outputs/metrics/cathe_labels.csv \
-    --target_cath 2.60.40 \
-    --out_fasta outputs/final/designable_sequences.fa
-```
-
----
-
-## Summary
+## 9. Artifact Layout
 
 ```
-Proteína     →  CATH-conditioned backbone generation (CFG + AG + self-cond)
-     ↓
-ProteinMPNN  →  50 sequences per backbone (T=0.3, Cα-only)
-     ↓
-ESMFold      →  structure prediction
-     ↓
-CATHe        →  fold classification; keep sequences matching target CATH
-     ↓
-             Designable proteins ✓
+results/
+├── experiments.csv                     # one row per (run, length); all params + metrics
+├── best_params_per_length.json         # best HPO params per length (if HPO was run)
+├── optuna_hpo_len<N>.db                # Optuna SQLite study DB per target length
+│
+├── all_designs.csv                     # all unique 2.60.40 sequences across all runs
+├── best_designs.csv                    # CATHe prob > 98%
+├── best_designs.fasta                  # same, FASTA (input for ESMFold)
+│
+├── best_200_validated_sequences.txt    # final output: confirmed by CATHe2 + FoldSeek
+├── best_200_validated_sequences.fasta  # same, FASTA
+│
+├── artifacts/
+│   └── <run_id>/                       # one directory per pipeline run
+│       ├── classifications.csv         # full CATHe2 output for this run
+│       ├── report.html                 # per-length stats + diversity heatmap
+│       └── top_designs.csv             # all 2.60.40 hits from this run
+│
+└── foldseek/
+    ├── esmfold_best_designs/           # ESMFold PDB files go here before FoldSeek
+    └── foldseek_results.txt            # FoldSeek search output (tab-separated)
 ```
 
-High throughput at generation, aggressive fold-based filtering at validation, small but reliable final output.
-
-
-
-
-
-```
-conda create -n foldseek_env
-conda activate foldseek_env
-```
-
-```
-# Linux AVX2 build (check using: cat /proc/cpuinfo | grep avx2)
-wget https://mmseqs.com/foldseek/foldseek-linux-avx2.tar.gz; tar xvzf foldseek-linux-avx2.tar.gz; export PATH=$(pwd)/foldseek/bin/:$PATH
-
-# Linux ARM64 build
-wget https://mmseqs.com/foldseek/foldseek-linux-arm64.tar.gz; tar xvzf foldseek-linux-arm64.tar.gz; export PATH=$(pwd)/foldseek/bin/:$PATH
-
-# Linux AVX2 & GPU build (req. glibc >= 2.17 and nvidia driver >=525.60.13)
-wget https://mmseqs.com/foldseek/foldseek-linux-gpu.tar.gz; tar xvfz foldseek-linux-gpu.tar.gz; export PATH=$(pwd)/foldseek/bin/:$PATH
-
-# MacOS
-wget https://mmseqs.com/foldseek/foldseek-osx-universal.tar.gz; tar xvzf foldseek-osx-universal.tar.gz; export PATH=$(pwd)/foldseek/bin/:$PATH
-
-# Conda installer (Linux and macOS)
-conda install -c conda-forge -c bioconda foldseek
-```
-## How to setup and run FoldSeek
-- move the .pdb files generated by ESMFold to resuslts/foldseek/emsfold_best_designs
-
-
-
-```
-foldseek databases CATH50 cath_db tmp
-```
-
-
-```
-# 1. Create a database from your PDB files
-foldseek createdb esmfold_best_designs query_db
-
-# 2. Now search the database
-foldseek search query_db cath_db results tmp
-
-# 3. Convert results to readable format
-foldseek convertalis query_db cath_db results foldseek_results.txt --format-mode 0
-```
+`run_id` format: `YYYYMMDD_HHMMSS_<6 hex chars>` — generated at the end of each Nextflow run by `log_run.py`.
