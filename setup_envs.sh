@@ -4,6 +4,26 @@ set -e
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 conda env create -f environment.yaml
 
+# ── FoldSeek binary ──────────────────────────────────────────────────────────
+if ! command -v foldseek &>/dev/null; then
+    echo "==> Installing FoldSeek binary..."
+    FOLDSEEK_TMP=$(mktemp -d)
+    wget -q -O "$FOLDSEEK_TMP/foldseek.tar.gz" https://mmseqs.com/foldseek/foldseek-osx-universal.tar.gz
+    tar xzf "$FOLDSEEK_TMP/foldseek.tar.gz" -C "$FOLDSEEK_TMP"
+    mkdir -p "$HOME/.local/bin"
+    mv "$FOLDSEEK_TMP/foldseek/bin/foldseek" "$HOME/.local/bin/foldseek"
+    rm -rf "$FOLDSEEK_TMP"
+    # Add ~/.local/bin to PATH in shell config if not already present
+    for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
+        if [ -f "$rc" ] && ! grep -q '\.local/bin' "$rc"; then
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$rc"
+        fi
+    done
+    echo "==> FoldSeek installed. Restart your shell or run: export PATH=\"\$HOME/.local/bin:\$PATH\""
+else
+    echo "==> FoldSeek already installed, skipping."
+fi
+
 # ── CATHe2 venv ─────────────────────────────────────────────────────────────
 echo "==> Setting up CATHe2 virtual environment..."
 cd "$REPO_ROOT/external/CATHe2"
