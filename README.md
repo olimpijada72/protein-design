@@ -6,6 +6,8 @@
 
 Generative protein design pipeline for immunoglobulin backbone generation and fold validation using flow-based models and graph neural networks.
 
+
+
 ![protein_rotating](figures/proteins_rotating.gif)
 
 ## Overview
@@ -13,7 +15,7 @@ Generative protein design pipeline for immunoglobulin backbone generation and fo
 Computational design of novel proteins remains a major challenge at the intersection of bioinformatics and generative machine learning. This project implements an end-to-end protein design pipeline for **immunoglobulin-like folds** (CATH 2.60.40.x), combining backbone generation, sequence design, fold classification, and structural validation in a single reproducible workflow.
 
 
-For a detailed explanation of the theoretical aspects of the project, consult the document at `docs/THEORY_EXPLANATION.md`, and a precise technical breakdown can be found at `docs/TECHNICAL_EXPLANATION.md`.
+For a detailed explanation of the theoretical aspects of the project, consult [`docs/theory.md`](docs/theory.md), and a precise technical breakdown can be found at [`docs/technical.md`](docs/technical.md).
 
 
 
@@ -39,9 +41,17 @@ The pipeline follows this workflow:
 
 ![nextflow architecture](figures/protein_design_architecture.png)
 
-Consult `docs/THEORY_EXPLANATION.md` and `docs/TECHNICAL_EXPLANATION.md` for more details
 
+## Documentation
 
+Full documentation is in the [`docs/`](docs/) directory:
+
+| File | Contents |
+|---|---|
+| [`docs/contributing.md`](docs/contributing.md) | Guide on how to use git to contribute to project |
+| [`docs/setup.md`](docs/setup.md) | Environment setup, installation, and step-by-step usage |
+| [`docs/theory.md`](docs/theory.md) | Theoretical background: protein biology, flow matching, all models |
+| [`docs/technical.md`](docs/technical.md) | Technical reference: pipeline internals, config, scripts, artifact layout |
 
 
 ## Results
@@ -261,7 +271,7 @@ IKVRLELDREFYTKGSLLDIKIEFSQPPSGNVDVFLKILTQGKDTLNWQKFVSQKQTEKIIHLTVEEEDGFYTTQVIVEY
 
 
 ## Installation
-For a detailed setup guide, consult `docs/SETUP.md`. The main steps are:
+For a detailed setup guide, consult [`docs/setup.md`](docs/setup.md). The main steps are:
 
 ```bash
 chmod +x setup_envs.sh
@@ -281,7 +291,7 @@ python download_results.py
 
 
 ## Usage
-For a detailed usage guide, consult `docs/TECHNICAL_EXPLANATION.md`. The main commands are:
+For a detailed usage guide, consult [`docs/setup.md`](docs/setup.md). The main commands are:
 
 ```bash
 # Run the full Nextflow pipeline
