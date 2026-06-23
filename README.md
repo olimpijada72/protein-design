@@ -309,7 +309,6 @@ bash src/run_foldseek.sh
 
 ## Repository Structure
 
-The repository integrates external state-of-the-art protein generation ([proteina](https://github.com/NVIDIA-Digital-Bio/proteina/)) and classification frameworks ([CATHe2](https://github.com/Mouret-Orfeu/CATHe2)) into a unified reproducible pipeline.
 ```
 .
 ├── docs/                        # Setup, theory, and technical documentation
